@@ -351,6 +351,41 @@
     .audit-criteria-row .grader-verdict { font-size: 0.78rem; color: var(--text-muted); }
 
     .audit-run-picker { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 18px; }
+    /* ── Trajectory viewer ── */
+    .traj-viewer { margin-top: 14px; border-top: 1px solid var(--border); padding-top: 12px; }
+    .traj-viewer .traj-loading { color: var(--text-muted); font-size: 0.83rem; padding: 12px 0; }
+    .traj-viewer .traj-error { color: var(--fail); font-size: 0.83rem; padding: 8px 0; }
+    .traj-step { margin-bottom: 10px; border-radius: 8px; overflow: hidden; }
+    .traj-step .step-header {
+      display: flex; align-items: center; gap: 8px; padding: 8px 12px;
+      font-size: 0.78rem; font-weight: 600; cursor: pointer; user-select: none;
+    }
+    .traj-step .step-header:hover { filter: brightness(1.15); }
+    .traj-step .step-header .step-time { color: var(--text-muted); font-weight: 400; margin-left: auto; font-size: 0.72rem; }
+    .traj-step.role-user .step-header { background: #1e3a5f; color: #93c5fd; }
+    .traj-step.role-assistant .step-header { background: #1a3328; color: #86efac; }
+    .traj-step.role-tool .step-header { background: #312e1c; color: #fcd34d; }
+    .traj-step.role-system .step-header { background: #2d1f3d; color: #c4b5fd; }
+    .traj-step .step-body {
+      padding: 10px 14px; font-size: 0.8rem; line-height: 1.6;
+      background: var(--bg-secondary); color: var(--text-primary);
+      max-height: 400px; overflow-y: auto; white-space: pre-wrap; word-break: break-word;
+    }
+    .traj-step .step-body.collapsed { display: none; }
+    .traj-step .step-body code {
+      background: var(--bg-input); padding: 1px 5px; border-radius: 3px; font-size: 0.78rem;
+    }
+    .traj-step .step-body pre {
+      background: var(--bg-input); padding: 10px 12px; border-radius: 6px;
+      overflow-x: auto; font-size: 0.75rem; margin: 6px 0;
+    }
+    .traj-toggle-btn {
+      font-size: 0.78rem; padding: 5px 12px; margin-top: 8px;
+      background: var(--bg-input); border: 1px solid var(--border);
+      color: var(--text-secondary); border-radius: 5px; cursor: pointer;
+    }
+    .traj-toggle-btn:hover { background: var(--border); }
+
     .audit-run-picker select { min-width: 180px; }
     .audit-run-header { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
     .audit-run-card { flex: 1; min-width: 280px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
@@ -956,6 +991,16 @@ function doCompare() {
     renderRunCard(currentRunEntries[a]) + renderRunCard(currentRunEntries[b]);
 }
 
+let runCardIdCounter = 0;
+
+function cdsToHttpUrl(cdsUrl) {
+  if (!cdsUrl || !cdsUrl.startsWith('scale-cds://')) return '';
+  const stripped = cdsUrl.replace('scale-cds://', '');
+  const parts = stripped.split('#s3/');
+  if (parts.length < 2) return '';
+  return `https://${parts[1]}.s3.us-west-2.amazonaws.com/${parts[0]}`;
+}
+
 function renderRunCard(r) {
   const rb = r.rubric;
   const criteria = rb.criteria || [];
@@ -965,6 +1010,7 @@ function renderRunCard(r) {
   const snaps = r.agentOutput?.snapshotS3Urls || {};
   let snapChips = Object.entries(snaps).map(([k,v]) =>
     `<span class="snapshot-chip" title="${esc(v)}">${esc(k)}</span>`).join('');
+  const trajId = 'traj_' + (runCardIdCounter++);
 
   let rows = criteria.map(c => `<tr>
     <td>${esc(c.title)}</td>
@@ -985,14 +1031,91 @@ function renderRunCard(r) {
         <span>Pass ${criteria.filter(c=>c.result==='PASS').length} · Fail ${criteria.filter(c=>c.result==='FAIL').length}</span>
       </div>
     </div>
-    ${trajUrl ? `<div style="margin-bottom:5px;font-size:0.8rem;"><strong style="color:var(--text-secondary);">Trajectory:</strong> <code style="color:var(--accent-light);word-break:break-all;font-size:0.73rem;">${esc(trajUrl)}</code></div>` : ''}
     ${wsUrl ? `<div style="margin-bottom:5px;font-size:0.8rem;"><strong style="color:var(--text-secondary);">Workspace:</strong> <code style="color:var(--accent-light);word-break:break-all;font-size:0.73rem;">${esc(wsUrl)}</code></div>` : ''}
     ${snapChips ? `<div style="margin-bottom:8px;"><div class="snapshot-links">${snapChips}</div></div>` : ''}
     <div class="criteria-table-wrap" style="max-height:500px;">
       <table><thead><tr><th>Criterion</th><th>Wt</th><th>Result</th><th>Justification</th></tr></thead>
       <tbody>${rows}</tbody></table>
     </div>
+    ${trajUrl ? `<div style="margin-top:12px;">
+      <button class="action-btn" onclick="loadTrajectory('${trajId}', '${esc(trajUrl)}')" id="btn_${trajId}">Load Trajectory</button>
+      <div id="${trajId}"></div>
+    </div>` : ''}
   </div>`;
+}
+
+function extractStepText(content) {
+  if (!content) return '';
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) {
+    return content.map(c => {
+      if (typeof c === 'string') return c;
+      if (c.type === 'text') return c.text || '';
+      if (c.type === 'tool_use') return `[Tool: ${c.name || '?'}]\n${JSON.stringify(c.input || {}, null, 2)}`;
+      if (c.type === 'tool_result') {
+        const r = c.content;
+        if (typeof r === 'string') return r;
+        if (Array.isArray(r)) return r.map(x => x.text || JSON.stringify(x)).join('\n');
+        return JSON.stringify(r, null, 2);
+      }
+      return JSON.stringify(c, null, 2);
+    }).join('\n');
+  }
+  return JSON.stringify(content, null, 2);
+}
+
+function renderTrajectory(steps) {
+  const msgs = steps.filter(s => s.type === 'message' && s.message);
+  if (!msgs.length) return '<div class="traj-error">No message steps found in trajectory.</div>';
+
+  return msgs.map((s, i) => {
+    const msg = s.message;
+    const role = msg.role || 'unknown';
+    const roleClass = role === 'user' ? 'role-user' : role === 'assistant' ? 'role-assistant' : 'role-tool';
+    const roleLabel = role === 'user' ? 'User' : role === 'assistant' ? 'Assistant' : 'Tool Result';
+    const text = extractStepText(msg.content).trim();
+    const ts = s.timestamp ? new Date(s.timestamp).toLocaleTimeString() : '';
+    const collapsed = text.length > 500 && role !== 'assistant' ? 'collapsed' : '';
+    const preview = text.length > 500 && collapsed ? esc(text.slice(0, 200)) + '...' : '';
+
+    return `<div class="traj-step ${roleClass}">
+      <div class="step-header" onclick="this.nextElementSibling.classList.toggle('collapsed');if(this.querySelector('.preview')){this.querySelector('.preview').style.display=this.nextElementSibling.classList.contains('collapsed')?'':'none'}">
+        <span>${roleLabel}</span>
+        <span class="step-time">${ts}</span>
+      </div>
+      <div class="step-body ${collapsed}">${esc(text) || '<em style="color:var(--text-muted);">(empty)</em>'}</div>
+      ${preview ? `<div class="preview" style="padding:4px 14px;font-size:0.75rem;color:var(--text-muted);background:var(--bg-secondary);cursor:pointer;" onclick="this.previousElementSibling.classList.remove('collapsed');this.style.display='none';">${preview} <span style="color:var(--accent-light);">click to expand</span></div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function loadTrajectory(containerId, cdsUrl) {
+  const container = document.getElementById(containerId);
+  const btn = document.getElementById('btn_' + containerId);
+  if (!container) return;
+
+  const httpUrl = cdsToHttpUrl(cdsUrl);
+  if (!httpUrl) { container.innerHTML = '<div class="traj-error">Invalid trajectory URL.</div>'; return; }
+
+  container.innerHTML = '<div class="traj-loading">Loading trajectory...</div>';
+  if (btn) btn.disabled = true;
+
+  try {
+    const res = await fetch(httpUrl);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const steps = await res.json();
+    container.innerHTML = `<div class="traj-viewer">
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+        <strong style="font-size:0.85rem;">${steps.filter(s=>s.type==='message').length} messages</strong>
+        <button class="traj-toggle-btn" onclick="this.parentElement.parentElement.querySelectorAll('.step-body').forEach(b=>b.classList.toggle('collapsed'))">Toggle All</button>
+      </div>
+      ${renderTrajectory(steps)}
+    </div>`;
+    if (btn) btn.textContent = 'Trajectory Loaded';
+  } catch (e) {
+    container.innerHTML = `<div class="traj-error">Failed to load trajectory: ${esc(e.message)}</div>`;
+    if (btn) btn.disabled = false;
+  }
 }
 
 // ═══════════════════════════════════════════════════════
