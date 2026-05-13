@@ -350,6 +350,20 @@
     .audit-criteria-row .criterion-title { font-size: 0.84rem; }
     .audit-criteria-row .grader-verdict { font-size: 0.78rem; color: var(--text-muted); }
 
+    .audit-run-picker { display: flex; gap: 14px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 18px; }
+    .audit-run-picker select { min-width: 180px; }
+    .audit-run-header { display: flex; gap: 16px; flex-wrap: wrap; margin-bottom: 12px; }
+    .audit-run-card { flex: 1; min-width: 280px; background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+    .audit-run-card h4 { margin: 0 0 6px 0; font-size: 0.95rem; }
+    .audit-run-card .meta { font-size: 0.78rem; color: var(--text-muted); word-break: break-all; }
+    .audit-criterion-group { margin-bottom: 2px; }
+    .audit-criterion-group .crit-header { font-weight: 600; font-size: 0.88rem; padding: 8px 0 4px; border-bottom: 1px solid var(--border); }
+    .audit-per-run { display: flex; gap: 12px; margin: 6px 0 10px; flex-wrap: wrap; }
+    .audit-per-run .run-verdict-box { flex: 1; min-width: 240px; background: var(--bg); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; }
+    .audit-per-run .run-verdict-box .run-label { font-size: 0.78rem; font-weight: 700; color: var(--accent-light); margin-bottom: 4px; }
+    .audit-per-run .run-verdict-box .verdict-row { display: flex; align-items: center; gap: 8px; margin-bottom: 4px; }
+    .audit-per-run .run-verdict-box .reason-text { font-size: 0.78rem; color: var(--text-secondary); margin: 4px 0; }
+
     .audit-toolbar {
       display: flex; gap: 8px; flex-wrap: wrap;
       align-items: center; margin-bottom: 16px;
@@ -991,7 +1005,10 @@ function getAuditStatus(taskId) {
   const allC = getUniqueCriteria(task);
   const allReviewed = allC.length > 0 && allC.every(c => {
     const cv = criteria[c.id];
-    return cv && cv.opinion && cv.opinion !== '';
+    if (!cv) return false;
+    const aOk = cv.runA?.opinion && cv.runA.opinion !== '';
+    const bOk = cv.runB?.opinion && cv.runB.opinion !== '';
+    return aOk && bOk;
   });
   const envsChecked = state.envFilesOk && state.envNotHindered;
   return (allReviewed && envsChecked) ? 'complete' : 'in-progress';
@@ -1018,38 +1035,37 @@ function getMajorityVerdict(task, criterionId) {
 
 // ─── Audit: Render ───
 
+function pickRandomAuditRuns() {
+  if (currentRunEntries.length < 2) return [0, Math.min(1, currentRunEntries.length - 1)];
+  let a = Math.floor(Math.random() * currentRunEntries.length), b = a;
+  while (b === a) b = Math.floor(Math.random() * currentRunEntries.length);
+  return [a, b];
+}
+
+function getRunCriterion(runEntry, criterionId) {
+  return (runEntry.rubric.criteria || []).find(c => c.id === criterionId);
+}
+
 function renderAuditPanel(task) {
   const panel = document.getElementById('panel-audit');
   const state = getAuditState(task.id);
   const allC = getUniqueCriteria(task);
-  const totalRuns = Object.keys(task.data.runs || {}).length;
 
-  let criteriaRows = allC.map(c => {
-    const mv = getMajorityVerdict(task, c.id);
-    const cv = state.criteria?.[c.id] || {};
-    const opVal = cv.opinion || '';
-    const selClass = opVal === 'agree' ? 'agree' : opVal === 'disagree' ? 'disagree' : opVal === 'unsure' ? 'unsure' : '';
-    return `<tr class="audit-criteria-row">
-      <td class="criterion-title">${esc(c.title)}</td>
-      <td class="weight-col">${c.weight}</td>
-      <td>
-        <span class="badge ${mv.verdict==='PASS'?'pass':'fail'}">${mv.verdict}</span>
-        <div class="grader-verdict">${mv.pass}P / ${mv.fail}F of ${mv.total}</div>
-      </td>
-      <td>
-        <select class="audit-select ${selClass}" data-cid="${c.id}" data-field="opinion">
-          <option value=""${!opVal?' selected':''}>--</option>
-          <option value="agree"${opVal==='agree'?' selected':''}>Agree</option>
-          <option value="disagree"${opVal==='disagree'?' selected':''}>Disagree</option>
-          <option value="unsure"${opVal==='unsure'?' selected':''}>Unsure</option>
-        </select>
-      </td>
-      <td>
-        <textarea class="audit-textarea small" data-cid="${c.id}" data-field="notes"
-          placeholder="Notes...">${esc(cv.notes || '')}</textarea>
-      </td>
-    </tr>`;
-  }).join('');
+  const opts = currentRunEntries.map((r, i) =>
+    `<option value="${i}">${r.shortId} — ${(r.rubric.percentage || 0).toFixed(1)}%</option>`
+  ).join('');
+
+  let idxA, idxB;
+  if (state.auditRunA != null && state.auditRunB != null
+      && state.auditRunA < currentRunEntries.length
+      && state.auditRunB < currentRunEntries.length) {
+    idxA = state.auditRunA;
+    idxB = state.auditRunB;
+  } else if (currentRunEntries.length >= 2) {
+    [idxA, idxB] = pickRandomAuditRuns();
+  } else {
+    idxA = 0; idxB = 0;
+  }
 
   const overallVal = state.overallQuality || '';
 
@@ -1059,6 +1075,22 @@ function renderAuditPanel(task) {
       <button class="action-btn purple" id="syncAllBtn" style="font-size:0.82rem;padding:7px 14px;">Sync All to Sheet</button>
       <button class="action-btn" id="exportCsvBtn" style="font-size:0.82rem;padding:7px 14px;background:#059669;">Export CSV</button>
       <span class="save-indicator" id="auditSaveIndicator">Saved</span>
+    </div>
+
+    <div class="card audit-section">
+      <h4>Audit Runs</h4>
+      <div class="audit-run-picker">
+        <div style="flex:1;min-width:180px;">
+          <label style="font-size:0.83rem;color:var(--text-secondary);display:block;margin-bottom:3px;">Run A</label>
+          <select id="auditRunA" style="width:100%;">${opts}</select>
+        </div>
+        <div style="flex:1;min-width:180px;">
+          <label style="font-size:0.83rem;color:var(--text-secondary);display:block;margin-bottom:3px;">Run B</label>
+          <select id="auditRunB" style="width:100%;">${opts}</select>
+        </div>
+        <button class="action-btn purple" id="auditRndBtn">Random 2</button>
+      </div>
+      <div class="audit-run-header" id="auditRunHeader"></div>
     </div>
 
     <div class="card audit-section">
@@ -1077,16 +1109,11 @@ function renderAuditPanel(task) {
     </div>
 
     <div class="card audit-section">
-      <h4>2. Grading Accuracy — Per Criterion (${allC.length} criteria, ${totalRuns} runs)</h4>
+      <h4>2. Grading Accuracy — Per Criterion (${allC.length} criteria)</h4>
       <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:12px;">
-        The "Grader Verdict" shows the majority result across all runs. Compare with your own judgment.
+        Review each criterion for both selected runs. Compare the grader's verdict with your own judgment.
       </p>
-      <div class="criteria-table-wrap" style="max-height:none;">
-        <table>
-          <thead><tr><th>Criterion</th><th>Wt</th><th>Grader Verdict</th><th>Your Opinion</th><th>Notes</th></tr></thead>
-          <tbody>${criteriaRows}</tbody>
-        </table>
-      </div>
+      <div id="auditCriteriaContainer"></div>
     </div>
 
     <div class="card audit-section">
@@ -1105,7 +1132,96 @@ function renderAuditPanel(task) {
     </div>
   `;
 
+  const selA = panel.querySelector('#auditRunA');
+  const selB = panel.querySelector('#auditRunB');
+  selA.selectedIndex = idxA;
+  selB.selectedIndex = idxB;
+
+  function refreshAuditRuns() {
+    const a = parseInt(selA.value), b = parseInt(selB.value);
+    renderAuditRunCards(a, b);
+    renderAuditCriteria(task, allC, a, b);
+  }
+
+  selA.addEventListener('change', refreshAuditRuns);
+  selB.addEventListener('change', refreshAuditRuns);
+  panel.querySelector('#auditRndBtn').addEventListener('click', () => {
+    if (currentRunEntries.length < 2) return;
+    const [a, b] = pickRandomAuditRuns();
+    selA.selectedIndex = a;
+    selB.selectedIndex = b;
+    refreshAuditRuns();
+  });
+
+  refreshAuditRuns();
   bindAuditEvents(task.id, allC);
+}
+
+function renderAuditRunCards(idxA, idxB) {
+  const container = document.getElementById('auditRunHeader');
+  const runs = [
+    { label: 'Run A', r: currentRunEntries[idxA] },
+    { label: 'Run B', r: currentRunEntries[idxB] }
+  ];
+  container.innerHTML = runs.map(({ label, r }) => {
+    if (!r) return '';
+    const trajUrl = r.agentOutput?.trajectoryCdsUrl || '';
+    const wsUrl = r.agentOutput?.workspaceCdsUrl || '';
+    const pct = r.rubric.percentage || 0;
+    return `<div class="audit-run-card">
+      <h4>${label}: ${r.shortId} <span class="model-chip ${r.model}">${r.model}</span>
+        <span style="float:right;font-weight:800;color:${scoreColor(pct)}">${pct.toFixed(1)}%</span></h4>
+      <div style="margin-bottom:4px;"><div class="score-bar" style="height:8px;"><div class="fill ${scoreClass(pct)}" style="width:${pct}%"></div></div></div>
+      ${trajUrl ? `<div class="meta"><strong>Trajectory:</strong> <code>${esc(trajUrl)}</code></div>` : ''}
+      ${wsUrl ? `<div class="meta"><strong>Workspace:</strong> <code>${esc(wsUrl)}</code></div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+function renderAuditCriteria(task, allC, idxA, idxB) {
+  const container = document.getElementById('auditCriteriaContainer');
+  const state = getAuditState(task.id);
+  const runA = currentRunEntries[idxA];
+  const runB = currentRunEntries[idxB];
+
+  container.innerHTML = allC.map(c => {
+    const cA = getRunCriterion(runA, c.id);
+    const cB = getRunCriterion(runB, c.id);
+    const stA = state.criteria?.[c.id]?.runA || {};
+    const stB = state.criteria?.[c.id]?.runB || {};
+
+    function runBox(label, crit, st, runKey) {
+      if (!crit) return `<div class="run-verdict-box"><div class="run-label">${label}</div><span style="color:var(--text-muted);">N/A</span></div>`;
+      const opVal = st.opinion || '';
+      const selClass = opVal || '';
+      return `<div class="run-verdict-box">
+        <div class="run-label">${label}</div>
+        <div class="verdict-row">
+          <span class="badge ${crit.result==='PASS'?'pass':'fail'}">${crit.result}</span>
+          <span style="font-size:0.8rem;color:var(--text-muted);">wt ${c.weight}</span>
+        </div>
+        <div class="reason-text">${esc(crit.reason || '—')}</div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:6px;">
+          <select class="audit-select ${selClass}" data-cid="${c.id}" data-run="${runKey}" data-field="opinion" style="min-width:100px;">
+            <option value=""${!opVal?' selected':''}>--</option>
+            <option value="agree"${opVal==='agree'?' selected':''}>Agree</option>
+            <option value="disagree"${opVal==='disagree'?' selected':''}>Disagree</option>
+            <option value="unsure"${opVal==='unsure'?' selected':''}>Unsure</option>
+          </select>
+          <textarea class="audit-textarea small" data-cid="${c.id}" data-run="${runKey}" data-field="notes"
+            placeholder="Notes..." style="flex:1;">${esc(st.notes || '')}</textarea>
+        </div>
+      </div>`;
+    }
+
+    return `<div class="audit-criterion-group">
+      <div class="crit-header">${esc(c.title)}</div>
+      <div class="audit-per-run">
+        ${runBox('Run A: ' + runA.shortId, cA, stA, 'runA')}
+        ${runBox('Run B: ' + runB.shortId, cB, stB, 'runB')}
+      </div>
+    </div>`;
+  }).join('');
 }
 
 function bindAuditEvents(taskId, allC) {
@@ -1114,14 +1230,21 @@ function bindAuditEvents(taskId, allC) {
   function collectState() {
     const criteria = {};
     for (const c of allC) {
-      const sel = panel.querySelector(`select[data-cid="${c.id}"][data-field="opinion"]`);
-      const ta = panel.querySelector(`textarea[data-cid="${c.id}"][data-field="notes"]`);
-      criteria[c.id] = {
-        opinion: sel?.value || '',
-        notes: ta?.value || ''
-      };
+      criteria[c.id] = { runA: {}, runB: {} };
+      for (const runKey of ['runA', 'runB']) {
+        const sel = panel.querySelector(`select[data-cid="${c.id}"][data-run="${runKey}"][data-field="opinion"]`);
+        const ta = panel.querySelector(`textarea[data-cid="${c.id}"][data-run="${runKey}"][data-field="notes"]`);
+        criteria[c.id][runKey] = {
+          opinion: sel?.value || '',
+          notes: ta?.value || ''
+        };
+      }
     }
     return {
+      auditRunA: parseInt(document.getElementById('auditRunA')?.value) || 0,
+      auditRunB: parseInt(document.getElementById('auditRunB')?.value) || 0,
+      auditRunAKey: currentRunEntries[parseInt(document.getElementById('auditRunA')?.value)]?.key || '',
+      auditRunBKey: currentRunEntries[parseInt(document.getElementById('auditRunB')?.value)]?.key || '',
       envFilesOk: document.getElementById('auditEnvFiles')?.checked || false,
       envNotHindered: document.getElementById('auditEnvNotHindered')?.checked || false,
       envNotes: document.getElementById('auditEnvNotes')?.value || '',
@@ -1203,28 +1326,33 @@ async function syncAllToSheet() {
 }
 
 function buildAuditRows(taskId, task, state, allC) {
-  return allC.map(c => {
-    const mv = getMajorityVerdict(task, c.id);
+  const rows = [];
+  for (const c of allC) {
     const cv = state.criteria?.[c.id] || {};
-    return {
-      task_id: taskId,
-      criterion_id: c.id,
-      criterion_title: c.title,
-      weight: c.weight,
-      grader_verdict: mv.verdict,
-      grader_pass_count: mv.pass,
-      grader_fail_count: mv.fail,
-      reviewer_opinion: cv.opinion || '',
-      reviewer_notes: cv.notes || '',
-      env_files_ok: state.envFilesOk ? 'YES' : 'NO',
-      env_not_hindered: state.envNotHindered ? 'YES' : 'NO',
-      env_notes: state.envNotes || '',
-      other_notes: state.otherNotes || '',
-      overall_quality: state.overallQuality || '',
-      reviewer_name: state.reviewer || '',
-      timestamp: state.timestamp || ''
-    };
-  });
+    for (const runKey of ['runA', 'runB']) {
+      const runSt = cv[runKey] || {};
+      const runLabel = runKey === 'runA' ? (state.auditRunAKey || '') : (state.auditRunBKey || '');
+      rows.push({
+        task_id: taskId,
+        run_key: runLabel,
+        run_slot: runKey,
+        criterion_id: c.id,
+        criterion_title: c.title,
+        weight: c.weight,
+        grader_verdict: '',
+        reviewer_opinion: runSt.opinion || '',
+        reviewer_notes: runSt.notes || '',
+        env_files_ok: state.envFilesOk ? 'YES' : 'NO',
+        env_not_hindered: state.envNotHindered ? 'YES' : 'NO',
+        env_notes: state.envNotes || '',
+        other_notes: state.otherNotes || '',
+        overall_quality: state.overallQuality || '',
+        reviewer_name: state.reviewer || '',
+        timestamp: state.timestamp || ''
+      });
+    }
+  }
+  return rows;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1278,9 +1406,8 @@ document.getElementById('importFileInput').addEventListener('change', (e) => {
 
 function exportAuditCSV() {
   const headers = [
-    'task_id','criterion_id','criterion_title','weight',
-    'grader_verdict','grader_pass_count','grader_fail_count',
-    'reviewer_opinion','reviewer_notes',
+    'task_id','run_key','run_slot','criterion_id','criterion_title','weight',
+    'grader_verdict','reviewer_opinion','reviewer_notes',
     'env_files_ok','env_not_hindered','env_notes',
     'other_notes','overall_quality','reviewer_name','timestamp'
   ];
