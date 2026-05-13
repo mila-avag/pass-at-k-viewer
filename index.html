@@ -1143,10 +1143,11 @@ function debouncedSave(taskId, state) {
 
 function syncToFirebase(taskId, state) {
   if (!fbDb) return;
+  if (!state.reviewer && !state.criteria) return;
   const el = document.getElementById('fbSyncStatus');
   if (el) { el.textContent = 'Syncing...'; el.style.color = 'var(--warn)'; }
   const safeKey = taskId.replace(/[.#$[\]]/g, '_');
-  fbDb.ref('audits/' + safeKey).set(state).then(() => {
+  fbDb.ref('audits/' + safeKey).update(state).then(() => {
     if (el) { el.textContent = 'Synced to Firebase'; el.style.color = 'var(--pass)'; }
   }).catch(err => {
     console.warn('Firebase sync failed:', err);
@@ -1233,7 +1234,7 @@ function renderAuditPanel(task) {
     state.auditRunB = idxB;
     state.auditRunAKey = currentRunEntries[idxA]?.key || '';
     state.auditRunBKey = currentRunEntries[idxB]?.key || '';
-    saveAuditState(task.id, state);
+    localStorage.setItem('audit_' + task.id, JSON.stringify(state));
   } else {
     idxA = 0; idxB = 0;
   }
