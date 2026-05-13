@@ -414,10 +414,6 @@
       <h1>Pass@k Viewer</h1>
       <div class="sub">Rubric evaluation results</div>
     </div>
-    <div class="settings-section">
-      <label>Reviewer Name</label>
-      <input type="text" class="reviewer-input" id="reviewerName" placeholder="Your name..." />
-    </div>
     <div class="sidebar-search">
       <input type="text" id="taskSearch" placeholder="Search tasks..." />
     </div>
@@ -1077,6 +1073,12 @@ function renderAuditPanel(task) {
       <span class="save-indicator" id="auditSaveIndicator">Saved</span>
     </div>
 
+    <div class="card audit-section" style="display:flex;align-items:center;gap:12px;padding:12px 16px;">
+      <label style="font-size:0.85rem;font-weight:600;white-space:nowrap;">Reviewer:</label>
+      <input type="text" class="reviewer-input" id="auditReviewerName" placeholder="Your name for this task..."
+        value="${esc(state.reviewer || '')}" style="flex:1;" />
+    </div>
+
     <div class="card audit-section">
       <h4>Audit Runs</h4>
       <div class="audit-run-picker">
@@ -1251,7 +1253,7 @@ function bindAuditEvents(taskId, allC) {
       criteria,
       otherNotes: document.getElementById('auditOtherNotes')?.value || '',
       overallQuality: document.getElementById('auditOverallQuality')?.value || '',
-      reviewer: document.getElementById('reviewerName')?.value || '',
+      reviewer: document.getElementById('auditReviewerName')?.value || '',
       timestamp: new Date().toISOString()
     };
   }
@@ -1436,11 +1438,6 @@ function exportAuditCSV() {
 // ═══════════════════════════════════════════════════════
 // ─── Audit: Persist reviewer name & sheet URL ───
 // ═══════════════════════════════════════════════════════
-
-document.getElementById('reviewerName').value = localStorage.getItem('audit_reviewer_name') || '';
-document.getElementById('reviewerName').addEventListener('input', (e) => {
-  localStorage.setItem('audit_reviewer_name', e.target.value);
-});
 
 document.getElementById('gsheetUrl').value = localStorage.getItem('audit_gsheet_url') || '';
 document.getElementById('gsheetUrl').addEventListener('input', (e) => {
