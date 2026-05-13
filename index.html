@@ -1,0 +1,1325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Pass@k Results Viewer</title>
+  <style>
+    :root {
+      --bg-primary: #0a0e1a;
+      --bg-secondary: #111827;
+      --bg-card: #1a1f2e;
+      --bg-card-hover: #1f2538;
+      --bg-input: #0f1419;
+      --border: #1f2937;
+      --border-light: #2d3748;
+      --text-primary: #e2e8f0;
+      --text-secondary: #94a3b8;
+      --text-muted: #64748b;
+      --accent: #3b82f6;
+      --accent-light: #60a5fa;
+      --pass: #22c55e;
+      --pass-bg: rgba(34,197,94,0.1);
+      --fail: #ef4444;
+      --fail-bg: rgba(239,68,68,0.1);
+      --warn: #f59e0b;
+      --warn-bg: rgba(245,158,11,0.1);
+      --header-gradient: linear-gradient(135deg, #0b132f 0%, #1d4ed8 100%);
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
+      background: linear-gradient(135deg, var(--bg-primary) 0%, var(--bg-secondary) 100%);
+      color: var(--text-primary);
+      line-height: 1.6;
+      min-height: 100vh;
+    }
+
+    /* ── Layout ── */
+    .shell { display: flex; height: 100vh; overflow: hidden; }
+    .sidebar {
+      width: 320px;
+      min-width: 260px;
+      background: var(--bg-input);
+      border-right: 1px solid var(--border);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .sidebar-header {
+      padding: 18px 16px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-header h1 { font-size: 1.15rem; font-weight: 700; margin-bottom: 2px; }
+    .sidebar-header .sub { font-size: 0.78rem; color: var(--text-muted); }
+    .sidebar-search {
+      padding: 8px 12px;
+      border-bottom: 1px solid var(--border);
+    }
+    .sidebar-search input {
+      width: 100%;
+      padding: 8px 12px;
+      background: var(--bg-card);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      color: var(--text-primary);
+      font-size: 0.85rem;
+      outline: none;
+    }
+    .sidebar-search input:focus { border-color: var(--accent); }
+    .sidebar-search input::placeholder { color: var(--text-muted); }
+
+    .task-list {
+      flex: 1;
+      overflow-y: auto;
+      padding: 6px 0;
+    }
+    .task-item {
+      padding: 10px 16px;
+      cursor: pointer;
+      border-left: 3px solid transparent;
+      transition: all 0.15s;
+    }
+    .task-item:hover { background: var(--bg-card); }
+    .task-item.active {
+      background: rgba(59,130,246,0.1);
+      border-left-color: var(--accent);
+    }
+    .task-item .task-id {
+      font-family: monospace;
+      font-size: 0.8rem;
+      color: var(--text-secondary);
+      margin-bottom: 2px;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .task-item .task-stats {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.82rem;
+    }
+    .task-item .task-stats .mean-score {
+      font-weight: 700;
+    }
+    .task-item .mini-bar {
+      flex: 1;
+      height: 4px;
+      background: rgba(255,255,255,0.06);
+      border-radius: 2px;
+      overflow: hidden;
+    }
+    .task-item .mini-bar .fill { height: 100%; border-radius: 2px; }
+    .task-item .run-count { font-size: 0.75rem; color: var(--text-muted); }
+
+    .sidebar-footer {
+      padding: 10px 16px;
+      border-top: 1px solid var(--border);
+      font-size: 0.78rem;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+
+    .main {
+      flex: 1;
+      overflow-y: auto;
+      padding: 24px;
+    }
+
+    /* ── Empty state ── */
+    .empty-main {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      color: var(--text-muted);
+      text-align: center;
+    }
+    .empty-main h2 { color: var(--text-secondary); margin-bottom: 8px; }
+    .empty-main p { max-width: 460px; margin-bottom: 18px; }
+    .empty-main .upload-btn {
+      display: inline-flex; align-items: center; gap: 6px;
+      background: var(--accent); color: #fff; border: none;
+      border-radius: 8px; padding: 10px 22px;
+      font-size: 0.9rem; font-weight: 600; cursor: pointer;
+    }
+    .empty-main .upload-btn:hover { background: #2563eb; }
+    .file-input { display: none; }
+
+    /* ── Tabs ── */
+    .tabs {
+      display: flex; gap: 2px;
+      background: var(--bg-card); border-radius: 10px;
+      padding: 4px; margin-bottom: 20px;
+      overflow-x: auto;
+    }
+    .tab {
+      border: none; background: transparent;
+      color: var(--text-secondary);
+      padding: 10px 20px; border-radius: 8px;
+      cursor: pointer; font-size: 0.9rem; font-weight: 500;
+      white-space: nowrap; transition: all 0.2s;
+    }
+    .tab:hover { color: var(--text-primary); background: rgba(255,255,255,0.05); }
+    .tab.active { background: var(--accent); color: #fff; font-weight: 600; }
+
+    .panel { display: none; }
+    .panel.active { display: block; }
+
+    /* ── Cards / meta ── */
+    .card {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 20px; margin-bottom: 16px;
+    }
+    .card h3 { font-size: 1.1rem; margin-bottom: 12px; }
+
+    .meta-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px,1fr));
+      gap: 12px; margin-bottom: 20px;
+    }
+    .meta-item {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 10px; padding: 14px;
+    }
+    .meta-item .label {
+      font-size: 0.75rem; text-transform: uppercase;
+      letter-spacing: 0.05em; color: var(--text-muted); margin-bottom: 3px;
+    }
+    .meta-item .value { font-size: 1.25rem; font-weight: 700; }
+
+    .task-prompt {
+      background: var(--bg-input); border: 1px solid var(--border);
+      border-radius: 8px; padding: 14px; font-size: 0.88rem;
+      color: var(--text-secondary); white-space: pre-wrap;
+      max-height: 180px; overflow-y: auto; line-height: 1.7;
+    }
+
+    /* ── Tables ── */
+    table { width: 100%; border-collapse: separate; border-spacing: 0; }
+    th, td {
+      text-align: left; padding: 9px 12px;
+      border-bottom: 1px solid var(--border); font-size: 0.86rem;
+    }
+    th {
+      background: rgba(0,0,0,0.2); color: var(--text-secondary);
+      font-weight: 600; font-size: 0.78rem; text-transform: uppercase;
+      letter-spacing: 0.04em; position: sticky; top: 0; z-index: 1;
+    }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .badge {
+      display: inline-block; padding: 2px 10px; border-radius: 20px;
+      font-size: 0.76rem; font-weight: 700; text-transform: uppercase;
+    }
+    .badge.pass { background: var(--pass-bg); color: var(--pass); }
+    .badge.fail { background: var(--fail-bg); color: var(--fail); }
+
+    .score-bar-container { display: flex; align-items: center; gap: 8px; }
+    .score-bar {
+      flex: 1; height: 8px; background: rgba(255,255,255,0.06);
+      border-radius: 4px; overflow: hidden;
+    }
+    .score-bar .fill { height: 100%; border-radius: 4px; transition: width 0.4s ease; }
+    .score-bar .fill.high { background: var(--pass); }
+    .score-bar .fill.mid  { background: var(--warn); }
+    .score-bar .fill.low  { background: var(--fail); }
+    .score-pct { font-weight: 700; font-size: 0.86rem; min-width: 48px; text-align: right; }
+
+    .run-row { cursor: pointer; transition: background 0.15s; }
+    .run-row:hover td { background: var(--bg-card-hover); }
+    .run-row.selected td { background: rgba(59,130,246,0.1); }
+
+    .model-chip {
+      display: inline-block; padding: 2px 10px; border-radius: 6px;
+      font-size: 0.8rem; font-weight: 600;
+      background: rgba(59,130,246,0.15); color: var(--accent-light);
+    }
+    .model-chip.gemini { background: rgba(245,158,11,0.15); color: #fbbf24; }
+
+    .detail-panel {
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 10px; margin-top: 16px; overflow: hidden;
+    }
+    .detail-header {
+      padding: 18px; background: rgba(0,0,0,0.2);
+      border-bottom: 1px solid var(--border);
+      display: flex; justify-content: space-between;
+      align-items: center; flex-wrap: wrap; gap: 10px;
+    }
+    .detail-header h3 { margin: 0; }
+    .close-btn {
+      background: rgba(255,255,255,0.1); border: 1px solid var(--border);
+      color: var(--text-secondary); border-radius: 6px;
+      padding: 6px 14px; cursor: pointer; font-size: 0.83rem;
+    }
+    .close-btn:hover { background: rgba(255,255,255,0.15); }
+
+    .criteria-table-wrap { max-height: 600px; overflow-y: auto; }
+    td.reason-col { font-size: 0.8rem; color: var(--text-secondary); max-width: 500px; }
+    .weight-col { text-align: center; font-weight: 700; color: var(--text-muted); }
+
+    .passatk-grid {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(180px,1fr)); gap: 10px;
+    }
+    .passatk-card {
+      background: var(--bg-input); border: 1px solid var(--border);
+      border-radius: 8px; padding: 14px; text-align: center;
+    }
+    .passatk-card .k-label {
+      font-size: 0.78rem; text-transform: uppercase;
+      color: var(--text-muted); letter-spacing: 0.04em; margin-bottom: 3px;
+    }
+    .passatk-card .k-value { font-size: 1.5rem; font-weight: 800; }
+
+    .criteria-passrate-bar { display: flex; align-items: center; gap: 6px; }
+    .criteria-passrate-bar .bar {
+      width: 80px; height: 6px; background: rgba(255,255,255,0.06);
+      border-radius: 3px; overflow: hidden;
+    }
+    .criteria-passrate-bar .bar .fill { height: 100%; border-radius: 3px; }
+
+    .two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+    .run-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    @media (max-width: 1000px) { .two-col, .run-compare { grid-template-columns: 1fr; } }
+
+    .snapshot-links { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+    .snapshot-chip {
+      padding: 2px 9px; background: rgba(255,255,255,0.06);
+      border: 1px solid var(--border); border-radius: 6px;
+      font-size: 0.76rem; color: var(--text-secondary);
+    }
+
+    select {
+      padding: 8px 12px; background: var(--bg-input);
+      border: 1px solid var(--border); color: var(--text-primary);
+      border-radius: 6px; font-size: 0.86rem; outline: none;
+    }
+    select:focus { border-color: var(--accent); }
+
+    .action-btn {
+      display: inline-flex; align-items: center; gap: 5px;
+      background: var(--accent); color: #fff; border: none;
+      border-radius: 8px; padding: 8px 18px;
+      font-size: 0.88rem; font-weight: 600; cursor: pointer;
+    }
+    .action-btn:hover { background: #2563eb; }
+    .action-btn.purple { background: #7c3aed; }
+    .action-btn.purple:hover { background: #6d28d9; }
+
+    /* ── Audit form ── */
+    .audit-section { margin-bottom: 20px; }
+    .audit-section h4 {
+      font-size: 0.95rem; margin-bottom: 10px;
+      padding-bottom: 6px; border-bottom: 1px solid var(--border);
+    }
+    .audit-check-row {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 0; font-size: 0.88rem;
+    }
+    .audit-check-row input[type="checkbox"] {
+      width: 18px; height: 18px; accent-color: var(--accent);
+      cursor: pointer; flex-shrink: 0;
+    }
+    .audit-textarea {
+      width: 100%; min-height: 60px; padding: 10px 12px;
+      background: var(--bg-input); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text-primary);
+      font-size: 0.85rem; font-family: inherit;
+      resize: vertical; outline: none; line-height: 1.5;
+    }
+    .audit-textarea:focus { border-color: var(--accent); }
+    .audit-textarea::placeholder { color: var(--text-muted); }
+    .audit-textarea.small { min-height: 36px; }
+
+    .audit-select {
+      padding: 6px 10px; background: var(--bg-input);
+      border: 1px solid var(--border); color: var(--text-primary);
+      border-radius: 6px; font-size: 0.82rem; outline: none;
+      min-width: 110px;
+    }
+    .audit-select:focus { border-color: var(--accent); }
+    .audit-select.agree { border-color: var(--pass); background: var(--pass-bg); }
+    .audit-select.disagree { border-color: var(--fail); background: var(--fail-bg); }
+    .audit-select.unsure { border-color: var(--warn); background: var(--warn-bg); }
+
+    .audit-criteria-row td { vertical-align: top; }
+    .audit-criteria-row .criterion-title { font-size: 0.84rem; }
+    .audit-criteria-row .grader-verdict { font-size: 0.78rem; color: var(--text-muted); }
+
+    .audit-toolbar {
+      display: flex; gap: 8px; flex-wrap: wrap;
+      align-items: center; margin-bottom: 16px;
+    }
+    .audit-toolbar .save-indicator {
+      font-size: 0.8rem; color: var(--pass); margin-left: auto;
+    }
+    .audit-toolbar .save-indicator.unsaved { color: var(--warn); }
+
+    .reviewer-input {
+      width: 100%; padding: 7px 10px;
+      background: var(--bg-card); border: 1px solid var(--border);
+      border-radius: 6px; color: var(--text-primary);
+      font-size: 0.82rem; outline: none;
+    }
+    .reviewer-input:focus { border-color: var(--accent); }
+    .reviewer-input::placeholder { color: var(--text-muted); }
+
+    .audit-status-dot {
+      display: inline-block; width: 8px; height: 8px;
+      border-radius: 50%; margin-left: 6px; flex-shrink: 0;
+    }
+    .audit-status-dot.not-started { background: var(--text-muted); opacity: 0.4; }
+    .audit-status-dot.in-progress { background: var(--warn); }
+    .audit-status-dot.complete { background: var(--pass); }
+
+    .settings-section {
+      padding: 10px 16px; border-top: 1px solid var(--border);
+    }
+    .settings-section label {
+      display: block; font-size: 0.75rem;
+      text-transform: uppercase; letter-spacing: 0.04em;
+      color: var(--text-muted); margin-bottom: 3px;
+    }
+
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+  </style>
+</head>
+<body>
+
+<div class="shell">
+  <!-- Sidebar -->
+  <div class="sidebar" id="sidebar">
+    <div class="sidebar-header">
+      <h1>Pass@k Viewer</h1>
+      <div class="sub">Rubric evaluation results</div>
+    </div>
+    <div class="settings-section">
+      <label>Reviewer Name</label>
+      <input type="text" class="reviewer-input" id="reviewerName" placeholder="Your name..." />
+    </div>
+    <div class="sidebar-search">
+      <input type="text" id="taskSearch" placeholder="Search tasks..." />
+    </div>
+    <div class="task-list" id="taskList"></div>
+    <div class="settings-section" style="padding-top:8px;">
+      <label>Google Apps Script URL</label>
+      <input type="text" class="reviewer-input" id="gsheetUrl" placeholder="https://script.google.com/macros/s/..." style="font-size:0.75rem;" />
+    </div>
+    <div class="sidebar-footer">
+      <span id="taskCountLabel">0 tasks</span>
+      <div style="display:flex;gap:6px;align-items:center;">
+        <button class="action-btn" style="padding:5px 10px;font-size:0.74rem;" id="exportAllBtn">Export</button>
+        <label class="action-btn" style="padding:5px 10px;font-size:0.74rem;">
+          Import
+          <input type="file" accept=".json" class="file-input" id="importFileInput" />
+        </label>
+        <label class="action-btn" style="padding:5px 10px;font-size:0.74rem;">
+          CSV
+          <input type="file" accept=".csv" class="file-input" id="fileInput" />
+        </label>
+      </div>
+    </div>
+  </div>
+
+  <!-- Main -->
+  <div class="main" id="mainArea">
+    <div class="empty-main" id="emptyMain">
+      <h2>No Data Loaded</h2>
+      <p>The viewer will try to auto-load <code>data.csv</code> from the same directory. You can also upload a CSV manually.</p>
+      <p style="font-size:0.82rem;">Expected format: two columns — <code>task_id</code> and the full results JSON.</p>
+      <label class="upload-btn" style="margin-top:8px;">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M8 1v10M4 5l4-4 4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><path d="M1 11v2a2 2 0 002 2h10a2 2 0 002-2v-2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        Upload CSV
+        <input type="file" accept=".csv" class="file-input" id="fileInput2" />
+      </label>
+    </div>
+    <div id="taskContent" style="display:none;"></div>
+  </div>
+</div>
+
+<script>
+// ─── State ───
+let TASKS = [];          // [{id, data}]  data = parsed JSON per task
+let activeTaskIdx = -1;
+let currentRunEntries = [];
+
+// ─── CSV Parsing ───
+// Handles quoted fields (JSON contains commas, quotes, newlines)
+function parseCSV(text) {
+  const rows = [];
+  let i = 0;
+  const len = text.length;
+
+  function skipBOM() { if (text.charCodeAt(0) === 0xFEFF) i = 1; }
+  skipBOM();
+
+  while (i < len) {
+    const row = [];
+    while (i < len) {
+      let val = '';
+      if (text[i] === '"') {
+        i++;
+        while (i < len) {
+          if (text[i] === '"') {
+            if (i + 1 < len && text[i + 1] === '"') { val += '"'; i += 2; }
+            else { i++; break; }
+          } else { val += text[i]; i++; }
+        }
+      } else {
+        const start = i;
+        while (i < len && text[i] !== ',' && text[i] !== '\n' && text[i] !== '\r') i++;
+        val = text.substring(start, i);
+      }
+      row.push(val);
+      if (i < len && text[i] === ',') { i++; continue; }
+      if (i < len && text[i] === '\r') i++;
+      if (i < len && text[i] === '\n') i++;
+      break;
+    }
+    if (row.length > 0 && !(row.length === 1 && row[0] === '')) rows.push(row);
+  }
+  return rows;
+}
+
+function loadCSVText(text) {
+  const rows = parseCSV(text);
+  if (rows.length < 2) { alert('CSV has no data rows.'); return; }
+
+  const header = rows[0].map(h => h.trim().toUpperCase());
+  const col = name => header.indexOf(name);
+  const idCol      = Math.max(col('TASK_ID'), 0);
+  const hasRunsCol = col('HAS_RUNS');
+  const numRunsCol = col('NUM_RUNS');
+  const runsCol    = col('RUNS_DATA');
+  const jsonCol    = col('JSON_BLOB');
+
+  // Support two formats:
+  //  A) TASK_ID, HAS_RUNS, JSON_BLOB, NUM_RUNS, RUNS_DATA  (real export)
+  //  B) task_id, <json_blob_column>                          (simple 2-col)
+  const useRunsData = runsCol !== -1;
+
+  TASKS = [];
+  for (let r = 1; r < rows.length; r++) {
+    const row = rows[r];
+    const taskId = row[idCol]?.trim() || `task_${r}`;
+
+    if (useRunsData) {
+      if (hasRunsCol !== -1 && row[hasRunsCol]?.trim() === 'NO') continue;
+      const runsStr = row[runsCol]?.trim();
+      if (!runsStr) continue;
+      try {
+        const runs = JSON.parse(runsStr);
+        TASKS.push({ id: taskId, data: { runs }, numRuns: parseInt(row[numRunsCol]) || 0 });
+      } catch (e) {
+        console.warn(`Row ${r}: invalid RUNS_DATA JSON for ${taskId}`, e.message);
+      }
+    } else {
+      const fallbackCol = jsonCol !== -1 ? jsonCol : 1;
+      const jsonStr = row[fallbackCol]?.trim();
+      if (!jsonStr) continue;
+      try {
+        const data = JSON.parse(jsonStr);
+        TASKS.push({ id: taskId, data });
+      } catch (e) {
+        console.warn(`Row ${r}: invalid JSON for ${taskId}`, e.message);
+      }
+    }
+  }
+
+  if (TASKS.length === 0) { alert('No valid tasks found in CSV.'); return; }
+  TASKS.sort((a, b) => {
+    const ma = meanPct(a), mb = meanPct(b);
+    return ma - mb;
+  });
+  renderTaskList();
+  selectTask(0);
+}
+
+function meanPct(task) {
+  const pcts = Object.values(task.data.runs || {}).map(r => r.rubric_results?.percentage || 0);
+  return pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : 0;
+}
+
+// ─── File inputs ───
+function handleFileUpload(e) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => loadCSVText(ev.target.result);
+  reader.readAsText(file);
+}
+document.getElementById('fileInput').addEventListener('change', handleFileUpload);
+document.getElementById('fileInput2').addEventListener('change', handleFileUpload);
+
+// Auto-load data.csv
+fetch('data.csv')
+  .then(r => { if (r.ok) return r.text(); throw new Error('no data.csv'); })
+  .then(text => loadCSVText(text))
+  .catch(() => {});
+
+// ─── Sidebar ───
+function renderTaskList(filter) {
+  const list = document.getElementById('taskList');
+  const q = (filter || '').toLowerCase();
+
+  list.innerHTML = TASKS.map((t, i) => {
+    if (q && !t.id.toLowerCase().includes(q)) return '';
+    const pcts = Object.values(t.data.runs || {}).map(r => r.rubric_results?.percentage || 0);
+    const mean = pcts.length ? pcts.reduce((a, b) => a + b, 0) / pcts.length : 0;
+    const cls = scoreClass(mean);
+    const auditSt = getAuditStatus(t.id);
+    return `<div class="task-item${i === activeTaskIdx ? ' active' : ''}" data-idx="${i}">
+      <div class="task-id" title="${t.id}">${t.id}<span class="audit-status-dot ${auditSt}" title="Audit: ${auditSt}"></span></div>
+      <div class="task-stats">
+        <span class="mean-score" style="color:${scoreColor(mean)}">${mean.toFixed(1)}%</span>
+        <div class="mini-bar"><div class="fill ${cls}" style="width:${mean}%"></div></div>
+        <span class="run-count">${pcts.length} runs</span>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('taskCountLabel').textContent = `${TASKS.length} tasks`;
+
+  list.querySelectorAll('.task-item').forEach(el => {
+    el.addEventListener('click', () => selectTask(parseInt(el.dataset.idx)));
+  });
+}
+
+document.getElementById('taskSearch').addEventListener('input', e => {
+  renderTaskList(e.target.value);
+});
+
+// ─── Select a task ───
+function selectTask(idx) {
+  activeTaskIdx = idx;
+  renderTaskList(document.getElementById('taskSearch').value);
+  document.getElementById('emptyMain').style.display = 'none';
+  const content = document.getElementById('taskContent');
+  content.style.display = 'block';
+  renderTaskView(TASKS[idx]);
+}
+
+// ─── Utilities ───
+function shortRunId(key) {
+  const parts = key.split('::');
+  const model = parts[1] || '';
+  const idx = parts[2] || '';
+  const short = model.includes('claude') || model.includes('anthropic') ? 'opus'
+    : model.includes('gemini') || model.includes('google') ? 'gemini'
+    : model.split('/').pop();
+  return short + '/' + idx;
+}
+function modelFamily(key) {
+  if (key.includes('claude') || key.includes('anthropic')) return 'opus';
+  if (key.includes('gemini') || key.includes('google')) return 'gemini';
+  return key.split('::')[1]?.split('/').pop() || 'unknown';
+}
+function scoreClass(pct) { return pct >= 70 ? 'high' : pct >= 40 ? 'mid' : 'low'; }
+function scoreColor(pct) { return pct >= 70 ? 'var(--pass)' : pct >= 40 ? 'var(--warn)' : 'var(--fail)'; }
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+// ─── Render task view ───
+function renderTaskView(task) {
+  const D = task.data;
+  currentRunEntries = Object.entries(D.runs || {}).map(([key, val]) => ({
+    key, shortId: shortRunId(key), model: modelFamily(key),
+    rubric: val.rubric_results || {}, agentOutput: val.agentOutput || {},
+    testResults: val.test_results || {}
+  }));
+
+  const models = [...new Set(currentRunEntries.map(r => r.model))];
+  const container = document.getElementById('taskContent');
+  container.innerHTML = `
+    <div style="margin-bottom:18px;">
+      <h2 style="font-size:1.3rem;">${esc(task.id)}</h2>
+      <div style="font-size:0.85rem;color:var(--text-muted);">
+        ${D.runTimestamp ? new Date(D.runTimestamp).toLocaleString() : ''}
+        ${models.length ? 'Models: ' + models.join(', ') : ''}
+        ${D.modelSpecs ? ' · ' + D.modelSpecs.map(m => m.label || m.model).join(', ') : ''}
+        ${D.input?.universeSlug ? ' · Universe: ' + esc(D.input.universeSlug) : ''}
+        ${' · ' + currentRunEntries.length + ' runs'}
+      </div>
+    </div>
+    <div class="tabs" id="taskTabs"></div>
+    <div id="panel-overview" class="panel active"></div>
+    <div id="panel-runs" class="panel"></div>
+    <div id="panel-criteria" class="panel"></div>
+    <div id="panel-compare" class="panel"></div>
+    <div id="panel-audit" class="panel"></div>
+  `;
+
+  // Tabs
+  const auditState = getAuditState(task.id);
+  const auditStatus = getAuditStatus(task.id);
+  const auditLabel = auditStatus === 'complete' ? 'Audit (Done)' : auditStatus === 'in-progress' ? 'Audit (WIP)' : 'Audit';
+  const tabDefs = [
+    { id: 'overview', label: 'Overview' },
+    { id: 'runs', label: 'All Runs' },
+    { id: 'criteria', label: 'Criteria Analysis' },
+    { id: 'compare', label: 'Compare 2 Runs' },
+    { id: 'audit', label: auditLabel }
+  ];
+  const tabBar = document.getElementById('taskTabs');
+  tabBar.innerHTML = tabDefs.map((t, i) =>
+    `<button class="tab${i === 0 ? ' active' : ''}" data-tab="${t.id}">${t.label}</button>`
+  ).join('');
+  tabBar.querySelectorAll('.tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      tabBar.querySelectorAll('.tab').forEach(b => b.classList.remove('active'));
+      container.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+      btn.classList.add('active');
+      container.querySelector('#panel-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  renderOverview(D);
+  renderRunsTable();
+  renderCriteriaAnalysis();
+  renderComparePanel();
+  renderAuditPanel(task);
+}
+
+// ─── Overview ───
+function renderOverview(D) {
+  const panel = document.getElementById('panel-overview');
+  const pcts = currentRunEntries.map(r => r.rubric.percentage || 0);
+  const n = pcts.length;
+  const mean = n ? pcts.reduce((a, b) => a + b, 0) / n : 0;
+  const max = n ? Math.max(...pcts) : 0;
+  const fullPasses = pcts.filter(p => p === 100).length;
+  const models = [...new Set(currentRunEntries.map(r => r.model))];
+
+  // Pass@k
+  const thresholds = [50, 60, 70, 80, 90, 100];
+  let patkHtml = '<div class="passatk-grid">';
+  for (const t of thresholds) {
+    const passing = pcts.filter(p => p >= t);
+    const p1 = n > 0 ? passing.length / n : 0;
+    const pk = n > 0 ? (1 - Math.pow(1 - p1, n)) : 0;
+    patkHtml += `<div class="passatk-card">
+      <div class="k-label">≥${t}%</div>
+      <div class="k-value" style="color:${scoreColor(p1*100)}">${(p1*100).toFixed(0)}%</div>
+      <div style="font-size:0.75rem;color:var(--text-muted);">p@1 ${p1.toFixed(3)} · p@${n} ${pk.toFixed(3)}</div>
+    </div>`;
+  }
+  patkHtml += '</div>';
+
+  // Score distribution
+  const buckets = [0,10,20,30,40,50,60,70,80,90];
+  const counts = buckets.map(b => pcts.filter(p => p >= b && p < b + 10).length);
+  counts[counts.length - 1] += pcts.filter(p => p === 100).length;
+  const maxC = Math.max(...counts, 1);
+  let distHtml = '<div style="display:flex;align-items:flex-end;gap:4px;height:110px;padding:8px 0;">';
+  for (let i = 0; i < buckets.length; i++) {
+    const h = (counts[i] / maxC) * 100;
+    distHtml += `<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;" title="${buckets[i]}-${buckets[i]+9}%: ${counts[i]}">
+      <div style="font-size:0.68rem;color:var(--text-muted);margin-bottom:2px;">${counts[i]||''}</div>
+      <div style="width:100%;height:${Math.max(h,2)}%;background:${scoreColor(buckets[i]+5)};border-radius:3px 3px 0 0;opacity:0.7;"></div>
+      <div style="font-size:0.62rem;color:var(--text-muted);margin-top:2px;">${buckets[i]}</div>
+    </div>`;
+  }
+  distHtml += '</div>';
+
+  // Model summary
+  let modelRows = models.map(m => {
+    const runs = currentRunEntries.filter(r => r.model === m);
+    const p = runs.map(r => r.rubric.percentage || 0);
+    const avg = p.reduce((a, b) => a + b, 0) / p.length;
+    return `<tr>
+      <td><span class="model-chip ${m}">${m}</span></td>
+      <td>${runs.length}</td>
+      <td style="color:${scoreColor(avg)};font-weight:700;">${avg.toFixed(1)}%</td>
+      <td>${Math.max(...p).toFixed(1)}%</td>
+      <td>${Math.min(...p).toFixed(1)}%</td>
+    </tr>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="meta-grid">
+      <div class="meta-item"><div class="label">Total Runs</div><div class="value">${n}</div></div>
+      <div class="meta-item"><div class="label">Models</div><div class="value" style="font-size:1rem;">${models.join(', ')}</div></div>
+      <div class="meta-item"><div class="label">Mean Score</div><div class="value" style="color:${scoreColor(mean)}">${mean.toFixed(1)}%</div></div>
+      <div class="meta-item"><div class="label">Best Score</div><div class="value" style="color:${scoreColor(max)}">${max.toFixed(1)}%</div></div>
+      <div class="meta-item"><div class="label">100% Runs</div><div class="value" style="color:${fullPasses > 0 ? 'var(--pass)' : 'var(--fail)'}">${fullPasses}/${n}</div></div>
+    </div>
+    ${D.input?.message ? `<div class="card"><h3>Task Prompt</h3><div class="task-prompt">${esc(D.input.message)}</div></div>` : ''}
+    <div class="two-col">
+      <div class="card"><h3>Pass@k (Score Thresholds)</h3>${patkHtml}</div>
+      <div class="card"><h3>Score Distribution</h3>${distHtml}</div>
+    </div>
+    <div class="card"><h3>Per-Model Summary</h3>
+      <table><thead><tr><th>Model</th><th>Runs</th><th>Mean</th><th>Max</th><th>Min</th></tr></thead>
+      <tbody>${modelRows}</tbody></table>
+    </div>
+  `;
+}
+
+// ─── Runs table ───
+function renderRunsTable() {
+  const panel = document.getElementById('panel-runs');
+  let rows = currentRunEntries.map((r, i) => {
+    const rb = r.rubric;
+    const pct = rb.percentage || 0;
+    const passCnt = (rb.criteria || []).filter(c => c.result === 'PASS').length;
+    const failCnt = (rb.criteria || []).filter(c => c.result === 'FAIL').length;
+    return `<tr class="run-row" data-idx="${i}">
+      <td style="font-family:monospace;font-size:0.8rem;">${r.shortId}</td>
+      <td><span class="model-chip ${r.model}">${r.model}</span></td>
+      <td style="font-weight:700;">${rb.score||0}</td>
+      <td style="color:var(--text-muted);">${rb.max_score||0}</td>
+      <td><div class="score-bar-container"><div class="score-bar"><div class="fill ${scoreClass(pct)}" style="width:${pct}%"></div></div><span class="score-pct" style="color:${scoreColor(pct)}">${pct.toFixed(1)}%</span></div></td>
+      <td><span class="badge pass">${passCnt}P</span> <span class="badge fail">${failCnt}F</span></td>
+    </tr>`;
+  }).join('');
+
+  panel.innerHTML = `
+    <div class="card"><h3>All Runs (${currentRunEntries.length})</h3>
+      <table><thead><tr><th>Run</th><th>Model</th><th>Score</th><th>Max</th><th>%</th><th>P/F</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </div>
+    <div id="runDetailContainer"></div>
+  `;
+
+  panel.querySelectorAll('.run-row').forEach(row => {
+    row.addEventListener('click', () => {
+      panel.querySelectorAll('.run-row').forEach(r => r.classList.remove('selected'));
+      row.classList.add('selected');
+      showRunDetail(parseInt(row.dataset.idx));
+    });
+  });
+}
+
+function showRunDetail(idx) {
+  const r = currentRunEntries[idx];
+  const rb = r.rubric;
+  const criteria = rb.criteria || [];
+  const trajUrl = r.agentOutput?.trajectoryCdsUrl || '';
+  const wsUrl = r.agentOutput?.workspaceCdsUrl || '';
+  const snaps = r.agentOutput?.snapshotS3Urls || {};
+
+  let crows = criteria.map(c => `<tr>
+    <td style="font-family:monospace;font-size:0.76rem;color:var(--text-muted);">${esc(c.id)}</td>
+    <td>${esc(c.title)}</td>
+    <td class="weight-col">${c.weight}</td>
+    <td><span class="badge ${c.result==='PASS'?'pass':'fail'}">${c.result}</span></td>
+    <td class="reason-col">${esc(c.reason || '—')}</td>
+  </tr>`).join('');
+
+  let snapChips = Object.entries(snaps).map(([k,v]) =>
+    `<span class="snapshot-chip" title="${esc(v)}">${esc(k)}</span>`).join('');
+
+  document.getElementById('runDetailContainer').innerHTML = `
+    <div class="detail-panel">
+      <div class="detail-header">
+        <div>
+          <h3>${r.shortId} <span class="model-chip ${r.model}">${r.model}</span></h3>
+          <div style="font-size:0.83rem;color:var(--text-secondary);margin-top:3px;">
+            Score: <strong style="color:${scoreColor(rb.percentage||0)}">${rb.score}/${rb.max_score} (${(rb.percentage||0).toFixed(1)}%)</strong>
+          </div>
+        </div>
+        <button class="close-btn" onclick="document.getElementById('runDetailContainer').innerHTML=''">Close</button>
+      </div>
+      <div style="padding:14px;">
+        ${trajUrl ? `<div style="margin-bottom:6px;font-size:0.82rem;"><strong style="color:var(--text-secondary);">Trajectory:</strong> <code style="color:var(--accent-light);word-break:break-all;font-size:0.78rem;">${esc(trajUrl)}</code></div>` : ''}
+        ${wsUrl ? `<div style="margin-bottom:6px;font-size:0.82rem;"><strong style="color:var(--text-secondary);">Workspace:</strong> <code style="color:var(--accent-light);word-break:break-all;font-size:0.78rem;">${esc(wsUrl)}</code></div>` : ''}
+        ${snapChips ? `<div style="margin-bottom:10px;font-size:0.82rem;"><strong style="color:var(--text-secondary);">Snapshots:</strong><div class="snapshot-links">${snapChips}</div></div>` : ''}
+        <div class="criteria-table-wrap">
+          <table><thead><tr><th>ID</th><th>Criterion</th><th>Wt</th><th>Result</th><th>Justification</th></tr></thead>
+          <tbody>${crows}</tbody></table>
+        </div>
+      </div>
+    </div>`;
+}
+
+// ─── Criteria analysis ───
+function renderCriteriaAnalysis() {
+  const panel = document.getElementById('panel-criteria');
+  if (currentRunEntries.length === 0) { panel.innerHTML = '<p style="color:var(--text-muted)">No runs.</p>'; return; }
+  const allC = currentRunEntries[0].rubric.criteria || [];
+  const total = currentRunEntries.length;
+
+  let rows = allC.map(c => {
+    const passes = currentRunEntries.filter(r =>
+      (r.rubric.criteria||[]).find(rc => rc.id === c.id)?.result === 'PASS'
+    ).length;
+    const rate = (passes / total) * 100;
+    return `<tr>
+      <td style="font-family:monospace;font-size:0.76rem;">${esc(c.id)}</td>
+      <td>${esc(c.title)}</td>
+      <td class="weight-col">${c.weight}</td>
+      <td><div class="criteria-passrate-bar"><div class="bar"><div class="fill" style="width:${rate}%;background:${scoreColor(rate)};"></div></div><span style="font-weight:700;font-size:0.83rem;color:${scoreColor(rate)};">${rate.toFixed(0)}%</span></div></td>
+      <td>${passes}/${total}</td>
+    </tr>`;
+  }).join('');
+
+  panel.innerHTML = `<div class="card"><h3>Per-Criterion Pass Rate</h3>
+    <table><thead><tr><th>ID</th><th>Criterion</th><th>Wt</th><th>Pass Rate</th><th>Passes</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+// ─── Compare ───
+function renderComparePanel() {
+  const panel = document.getElementById('panel-compare');
+  const opts = currentRunEntries.map((r, i) =>
+    `<option value="${i}">${r.shortId} — ${(r.rubric.percentage||0).toFixed(1)}%</option>`).join('');
+
+  panel.innerHTML = `
+    <div class="card">
+      <h3>Pick Two Runs to Compare</h3>
+      <div style="display:flex;gap:14px;flex-wrap:wrap;margin-top:8px;">
+        <div style="flex:1;min-width:180px;">
+          <label style="font-size:0.83rem;color:var(--text-secondary);display:block;margin-bottom:3px;">Run A</label>
+          <select id="cmpA" style="width:100%;">${opts}</select>
+        </div>
+        <div style="flex:1;min-width:180px;">
+          <label style="font-size:0.83rem;color:var(--text-secondary);display:block;margin-bottom:3px;">Run B</label>
+          <select id="cmpB" style="width:100%;">${opts}</select>
+        </div>
+        <div style="display:flex;align-items:flex-end;gap:8px;">
+          <button class="action-btn" id="cmpBtn">Compare</button>
+          <button class="action-btn purple" id="rndBtn">Random 2</button>
+        </div>
+      </div>
+    </div>
+    <div class="run-compare" id="cmpResults"></div>
+  `;
+
+  if (currentRunEntries.length >= 2) panel.querySelector('#cmpB').selectedIndex = 1;
+  panel.querySelector('#cmpBtn').addEventListener('click', doCompare);
+  panel.querySelector('#rndBtn').addEventListener('click', () => {
+    if (currentRunEntries.length < 2) return;
+    let a = Math.floor(Math.random() * currentRunEntries.length), b = a;
+    while (b === a) b = Math.floor(Math.random() * currentRunEntries.length);
+    panel.querySelector('#cmpA').selectedIndex = a;
+    panel.querySelector('#cmpB').selectedIndex = b;
+    doCompare();
+  });
+}
+
+function doCompare() {
+  const a = parseInt(document.getElementById('cmpA').value);
+  const b = parseInt(document.getElementById('cmpB').value);
+  if (isNaN(a) || isNaN(b)) return;
+  document.getElementById('cmpResults').innerHTML =
+    renderRunCard(currentRunEntries[a]) + renderRunCard(currentRunEntries[b]);
+}
+
+function renderRunCard(r) {
+  const rb = r.rubric;
+  const criteria = rb.criteria || [];
+  const pct = rb.percentage || 0;
+  const trajUrl = r.agentOutput?.trajectoryCdsUrl || '';
+  const wsUrl = r.agentOutput?.workspaceCdsUrl || '';
+  const snaps = r.agentOutput?.snapshotS3Urls || {};
+  let snapChips = Object.entries(snaps).map(([k,v]) =>
+    `<span class="snapshot-chip" title="${esc(v)}">${esc(k)}</span>`).join('');
+
+  let rows = criteria.map(c => `<tr>
+    <td>${esc(c.title)}</td>
+    <td class="weight-col">${c.weight}</td>
+    <td><span class="badge ${c.result==='PASS'?'pass':'fail'}">${c.result}</span></td>
+    <td class="reason-col">${esc(c.reason || '—')}</td>
+  </tr>`).join('');
+
+  return `<div class="card" style="overflow:hidden;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px;">
+      <h3>${r.shortId} <span class="model-chip ${r.model}">${r.model}</span></h3>
+      <span style="font-size:1.15rem;font-weight:800;color:${scoreColor(pct)}">${pct.toFixed(1)}%</span>
+    </div>
+    <div style="margin-bottom:8px;">
+      <div class="score-bar" style="height:10px;"><div class="fill ${scoreClass(pct)}" style="width:${pct}%"></div></div>
+      <div style="display:flex;justify-content:space-between;font-size:0.8rem;color:var(--text-muted);margin-top:3px;">
+        <span>${rb.score}/${rb.max_score}</span>
+        <span>Pass ${criteria.filter(c=>c.result==='PASS').length} · Fail ${criteria.filter(c=>c.result==='FAIL').length}</span>
+      </div>
+    </div>
+    ${trajUrl ? `<div style="margin-bottom:5px;font-size:0.8rem;"><strong style="color:var(--text-secondary);">Trajectory:</strong> <code style="color:var(--accent-light);word-break:break-all;font-size:0.73rem;">${esc(trajUrl)}</code></div>` : ''}
+    ${wsUrl ? `<div style="margin-bottom:5px;font-size:0.8rem;"><strong style="color:var(--text-secondary);">Workspace:</strong> <code style="color:var(--accent-light);word-break:break-all;font-size:0.73rem;">${esc(wsUrl)}</code></div>` : ''}
+    ${snapChips ? `<div style="margin-bottom:8px;"><div class="snapshot-links">${snapChips}</div></div>` : ''}
+    <div class="criteria-table-wrap" style="max-height:500px;">
+      <table><thead><tr><th>Criterion</th><th>Wt</th><th>Result</th><th>Justification</th></tr></thead>
+      <tbody>${rows}</tbody></table>
+    </div>
+  </div>`;
+}
+
+// ═══════════════════════════════════════════════════════
+// ─── Audit: State Management ───
+// ═══════════════════════════════════════════════════════
+
+function getAuditState(taskId) {
+  try { return JSON.parse(localStorage.getItem('audit_' + taskId)) || {}; }
+  catch { return {}; }
+}
+
+function saveAuditState(taskId, state) {
+  localStorage.setItem('audit_' + taskId, JSON.stringify(state));
+  updateSaveIndicator(true);
+  renderTaskList(document.getElementById('taskSearch').value);
+}
+
+let saveTimer = null;
+function debouncedSave(taskId, state) {
+  updateSaveIndicator(false);
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => saveAuditState(taskId, state), 500);
+}
+
+function updateSaveIndicator(saved) {
+  const el = document.getElementById('auditSaveIndicator');
+  if (!el) return;
+  el.textContent = saved ? 'Saved' : 'Unsaved...';
+  el.className = 'save-indicator' + (saved ? '' : ' unsaved');
+}
+
+function getAuditStatus(taskId) {
+  const state = getAuditState(taskId);
+  if (!state || Object.keys(state).length === 0) return 'not-started';
+  const criteria = state.criteria || {};
+  const hasCriteria = Object.keys(criteria).length > 0;
+  if (!hasCriteria && !state.envFilesOk && !state.envNotHindered) return 'not-started';
+
+  const task = TASKS.find(t => t.id === taskId);
+  if (!task) return 'in-progress';
+  const allC = getUniqueCriteria(task);
+  const allReviewed = allC.length > 0 && allC.every(c => {
+    const cv = criteria[c.id];
+    return cv && cv.opinion && cv.opinion !== '';
+  });
+  const envsChecked = state.envFilesOk && state.envNotHindered;
+  return (allReviewed && envsChecked) ? 'complete' : 'in-progress';
+}
+
+function getUniqueCriteria(task) {
+  const seen = new Map();
+  for (const run of Object.values(task.data.runs || {})) {
+    for (const c of (run.rubric_results?.criteria || [])) {
+      if (!seen.has(c.id)) seen.set(c.id, c);
+    }
+  }
+  return [...seen.values()];
+}
+
+function getMajorityVerdict(task, criterionId) {
+  let pass = 0, fail = 0;
+  for (const run of Object.values(task.data.runs || {})) {
+    const c = (run.rubric_results?.criteria || []).find(x => x.id === criterionId);
+    if (c?.result === 'PASS') pass++; else if (c?.result === 'FAIL') fail++;
+  }
+  return { verdict: pass >= fail ? 'PASS' : 'FAIL', pass, fail, total: pass + fail };
+}
+
+// ─── Audit: Render ───
+
+function renderAuditPanel(task) {
+  const panel = document.getElementById('panel-audit');
+  const state = getAuditState(task.id);
+  const allC = getUniqueCriteria(task);
+  const totalRuns = Object.keys(task.data.runs || {}).length;
+
+  let criteriaRows = allC.map(c => {
+    const mv = getMajorityVerdict(task, c.id);
+    const cv = state.criteria?.[c.id] || {};
+    const opVal = cv.opinion || '';
+    const selClass = opVal === 'agree' ? 'agree' : opVal === 'disagree' ? 'disagree' : opVal === 'unsure' ? 'unsure' : '';
+    return `<tr class="audit-criteria-row">
+      <td class="criterion-title">${esc(c.title)}</td>
+      <td class="weight-col">${c.weight}</td>
+      <td>
+        <span class="badge ${mv.verdict==='PASS'?'pass':'fail'}">${mv.verdict}</span>
+        <div class="grader-verdict">${mv.pass}P / ${mv.fail}F of ${mv.total}</div>
+      </td>
+      <td>
+        <select class="audit-select ${selClass}" data-cid="${c.id}" data-field="opinion">
+          <option value=""${!opVal?' selected':''}>--</option>
+          <option value="agree"${opVal==='agree'?' selected':''}>Agree</option>
+          <option value="disagree"${opVal==='disagree'?' selected':''}>Disagree</option>
+          <option value="unsure"${opVal==='unsure'?' selected':''}>Unsure</option>
+        </select>
+      </td>
+      <td>
+        <textarea class="audit-textarea small" data-cid="${c.id}" data-field="notes"
+          placeholder="Notes...">${esc(cv.notes || '')}</textarea>
+      </td>
+    </tr>`;
+  }).join('');
+
+  const overallVal = state.overallQuality || '';
+
+  panel.innerHTML = `
+    <div class="audit-toolbar">
+      <button class="action-btn" id="syncTaskBtn" style="font-size:0.82rem;padding:7px 14px;">Sync to Sheet</button>
+      <button class="action-btn purple" id="syncAllBtn" style="font-size:0.82rem;padding:7px 14px;">Sync All to Sheet</button>
+      <button class="action-btn" id="exportCsvBtn" style="font-size:0.82rem;padding:7px 14px;background:#059669;">Export CSV</button>
+      <span class="save-indicator" id="auditSaveIndicator">Saved</span>
+    </div>
+
+    <div class="card audit-section">
+      <h4>1. Environment Check</h4>
+      <div class="audit-check-row">
+        <input type="checkbox" id="auditEnvFiles" ${state.envFilesOk ? 'checked' : ''} />
+        <label for="auditEnvFiles">All input files exist that the prompt needs</label>
+      </div>
+      <div class="audit-check-row">
+        <input type="checkbox" id="auditEnvNotHindered" ${state.envNotHindered ? 'checked' : ''} />
+        <label for="auditEnvNotHindered">Agent was not hindered by its environment</label>
+      </div>
+      <div style="margin-top:8px;">
+        <textarea class="audit-textarea" id="auditEnvNotes" placeholder="Environment notes (optional)...">${esc(state.envNotes || '')}</textarea>
+      </div>
+    </div>
+
+    <div class="card audit-section">
+      <h4>2. Grading Accuracy — Per Criterion (${allC.length} criteria, ${totalRuns} runs)</h4>
+      <p style="font-size:0.82rem;color:var(--text-muted);margin-bottom:12px;">
+        The "Grader Verdict" shows the majority result across all runs. Compare with your own judgment.
+      </p>
+      <div class="criteria-table-wrap" style="max-height:none;">
+        <table>
+          <thead><tr><th>Criterion</th><th>Wt</th><th>Grader Verdict</th><th>Your Opinion</th><th>Notes</th></tr></thead>
+          <tbody>${criteriaRows}</tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card audit-section">
+      <h4>3. Other Issues</h4>
+      <textarea class="audit-textarea" id="auditOtherNotes" placeholder="Any other weirdness? Describe here..."
+        style="min-height:80px;">${esc(state.otherNotes || '')}</textarea>
+      <div style="margin-top:10px;display:flex;align-items:center;gap:10px;">
+        <label style="font-size:0.85rem;color:var(--text-secondary);">Overall task quality:</label>
+        <select class="audit-select" id="auditOverallQuality">
+          <option value=""${!overallVal?' selected':''}>--</option>
+          <option value="looks_good"${overallVal==='looks_good'?' selected':''}>Looks Good</option>
+          <option value="has_issues"${overallVal==='has_issues'?' selected':''}>Has Issues</option>
+          <option value="needs_discussion"${overallVal==='needs_discussion'?' selected':''}>Needs Discussion</option>
+        </select>
+      </div>
+    </div>
+  `;
+
+  bindAuditEvents(task.id, allC);
+}
+
+function bindAuditEvents(taskId, allC) {
+  const panel = document.getElementById('panel-audit');
+
+  function collectState() {
+    const criteria = {};
+    for (const c of allC) {
+      const sel = panel.querySelector(`select[data-cid="${c.id}"][data-field="opinion"]`);
+      const ta = panel.querySelector(`textarea[data-cid="${c.id}"][data-field="notes"]`);
+      criteria[c.id] = {
+        opinion: sel?.value || '',
+        notes: ta?.value || ''
+      };
+    }
+    return {
+      envFilesOk: document.getElementById('auditEnvFiles')?.checked || false,
+      envNotHindered: document.getElementById('auditEnvNotHindered')?.checked || false,
+      envNotes: document.getElementById('auditEnvNotes')?.value || '',
+      criteria,
+      otherNotes: document.getElementById('auditOtherNotes')?.value || '',
+      overallQuality: document.getElementById('auditOverallQuality')?.value || '',
+      reviewer: document.getElementById('reviewerName')?.value || '',
+      timestamp: new Date().toISOString()
+    };
+  }
+
+  function onInput() { debouncedSave(taskId, collectState()); }
+
+  panel.querySelectorAll('input, select, textarea').forEach(el => {
+    el.addEventListener('input', onInput);
+    el.addEventListener('change', () => {
+      if (el.classList.contains('audit-select') && el.dataset.field === 'opinion') {
+        el.className = 'audit-select ' + (el.value || '');
+      }
+      onInput();
+    });
+  });
+
+  document.getElementById('syncTaskBtn')?.addEventListener('click', () => syncToSheet(taskId));
+  document.getElementById('syncAllBtn')?.addEventListener('click', syncAllToSheet);
+  document.getElementById('exportCsvBtn')?.addEventListener('click', exportAuditCSV);
+}
+
+// ═══════════════════════════════════════════════════════
+// ─── Audit: Google Sheets Sync ───
+// ═══════════════════════════════════════════════════════
+
+async function syncToSheet(taskId) {
+  const url = document.getElementById('gsheetUrl')?.value?.trim();
+  if (!url) { alert('Set the Google Apps Script URL in the sidebar first.'); return; }
+  const task = TASKS.find(t => t.id === taskId);
+  if (!task) return;
+  const state = getAuditState(taskId);
+  const allC = getUniqueCriteria(task);
+  const rows = buildAuditRows(taskId, task, state, allC);
+
+  try {
+    const res = await fetch(url, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ taskId, rows })
+    });
+    alert('Synced ' + rows.length + ' rows for task ' + taskId);
+  } catch (e) {
+    alert('Sync failed: ' + e.message);
+  }
+}
+
+async function syncAllToSheet() {
+  const url = document.getElementById('gsheetUrl')?.value?.trim();
+  if (!url) { alert('Set the Google Apps Script URL in the sidebar first.'); return; }
+  let totalRows = 0;
+  const allRows = [];
+  for (const task of TASKS) {
+    const state = getAuditState(task.id);
+    if (!state || Object.keys(state).length === 0) continue;
+    const allC = getUniqueCriteria(task);
+    const rows = buildAuditRows(task.id, task, state, allC);
+    allRows.push(...rows);
+    totalRows += rows.length;
+  }
+  if (totalRows === 0) { alert('No audit data to sync.'); return; }
+
+  try {
+    await fetch(url, {
+      method: 'POST', mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ bulk: true, rows: allRows })
+    });
+    alert('Synced ' + totalRows + ' rows across all tasks.');
+  } catch (e) {
+    alert('Sync failed: ' + e.message);
+  }
+}
+
+function buildAuditRows(taskId, task, state, allC) {
+  return allC.map(c => {
+    const mv = getMajorityVerdict(task, c.id);
+    const cv = state.criteria?.[c.id] || {};
+    return {
+      task_id: taskId,
+      criterion_id: c.id,
+      criterion_title: c.title,
+      weight: c.weight,
+      grader_verdict: mv.verdict,
+      grader_pass_count: mv.pass,
+      grader_fail_count: mv.fail,
+      reviewer_opinion: cv.opinion || '',
+      reviewer_notes: cv.notes || '',
+      env_files_ok: state.envFilesOk ? 'YES' : 'NO',
+      env_not_hindered: state.envNotHindered ? 'YES' : 'NO',
+      env_notes: state.envNotes || '',
+      other_notes: state.otherNotes || '',
+      overall_quality: state.overallQuality || '',
+      reviewer_name: state.reviewer || '',
+      timestamp: state.timestamp || ''
+    };
+  });
+}
+
+// ═══════════════════════════════════════════════════════
+// ─── Audit: Local Export / Import ───
+// ═══════════════════════════════════════════════════════
+
+function getAllAuditData() {
+  const out = {};
+  for (const task of TASKS) {
+    const state = getAuditState(task.id);
+    if (state && Object.keys(state).length > 0) out[task.id] = state;
+  }
+  return out;
+}
+
+function downloadBlob(blob, filename) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = filename;
+  a.click();
+  URL.revokeObjectURL(a.href);
+}
+
+document.getElementById('exportAllBtn').addEventListener('click', () => {
+  const data = getAllAuditData();
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  downloadBlob(blob, 'audit_export_' + new Date().toISOString().slice(0,10) + '.json');
+});
+
+document.getElementById('importFileInput').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    try {
+      const data = JSON.parse(ev.target.result);
+      let count = 0;
+      for (const [taskId, state] of Object.entries(data)) {
+        localStorage.setItem('audit_' + taskId, JSON.stringify(state));
+        count++;
+      }
+      alert('Imported audit data for ' + count + ' tasks.');
+      if (activeTaskIdx >= 0) renderTaskView(TASKS[activeTaskIdx]);
+      renderTaskList(document.getElementById('taskSearch').value);
+    } catch (err) {
+      alert('Invalid JSON file: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+});
+
+function exportAuditCSV() {
+  const headers = [
+    'task_id','criterion_id','criterion_title','weight',
+    'grader_verdict','grader_pass_count','grader_fail_count',
+    'reviewer_opinion','reviewer_notes',
+    'env_files_ok','env_not_hindered','env_notes',
+    'other_notes','overall_quality','reviewer_name','timestamp'
+  ];
+  const csvRows = [headers.join(',')];
+
+  for (const task of TASKS) {
+    const state = getAuditState(task.id);
+    if (!state || Object.keys(state).length === 0) continue;
+    const allC = getUniqueCriteria(task);
+    const rows = buildAuditRows(task.id, task, state, allC);
+    for (const r of rows) {
+      csvRows.push(headers.map(h => {
+        let v = String(r[h] ?? '');
+        if (v.includes(',') || v.includes('"') || v.includes('\n')) {
+          v = '"' + v.replace(/"/g, '""') + '"';
+        }
+        return v;
+      }).join(','));
+    }
+  }
+
+  const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+  downloadBlob(blob, 'audit_results_' + new Date().toISOString().slice(0,10) + '.csv');
+}
+
+// ═══════════════════════════════════════════════════════
+// ─── Audit: Persist reviewer name & sheet URL ───
+// ═══════════════════════════════════════════════════════
+
+document.getElementById('reviewerName').value = localStorage.getItem('audit_reviewer_name') || '';
+document.getElementById('reviewerName').addEventListener('input', (e) => {
+  localStorage.setItem('audit_reviewer_name', e.target.value);
+});
+
+document.getElementById('gsheetUrl').value = localStorage.getItem('audit_gsheet_url') || '';
+document.getElementById('gsheetUrl').addEventListener('input', (e) => {
+  localStorage.setItem('audit_gsheet_url', e.target.value);
+});
+</script>
+
+</body>
+</html>
