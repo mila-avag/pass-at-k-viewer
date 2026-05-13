@@ -404,6 +404,8 @@
     ::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 3px; }
     ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
   </style>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 </head>
 <body>
 
@@ -453,7 +455,23 @@
 <script>
 // ─── State ───
 let TASKS = [];          // [{id, data}]  data = parsed JSON per task
-const GSHEET_SCRIPT_URL = 'https://script.google.com/a/macros/scale.com/s/AKfycbwarVuU4hw_g3JwELks1oPb21Tqq2b1PsgdpFBVEyWDrwKeuzRMB4UY1j4ku-x2enTeIg/exec';
+
+// ─── Firebase config (fill in after creating project) ───
+const FIREBASE_CONFIG = {
+  apiKey: '',
+  authDomain: '',
+  databaseURL: '',
+  projectId: '',
+  storageBucket: '',
+  messagingSenderId: '',
+  appId: ''
+};
+
+let fbDb = null;
+if (FIREBASE_CONFIG.databaseURL) {
+  firebase.initializeApp(FIREBASE_CONFIG);
+  fbDb = firebase.database();
+}
 
 let activeTaskIdx = -1;
 let currentRunEntries = [];
@@ -566,10 +584,29 @@ function handleFileUpload(e) {
 document.getElementById('fileInput').addEventListener('change', handleFileUpload);
 document.getElementById('fileInput2').addEventListener('change', handleFileUpload);
 
+// Fetch all audit state from Firebase into localStorage cache
+function hydrateFromFirebase() {
+  if (!fbDb) return Promise.resolve();
+  return fbDb.ref('audits').once('value').then(snap => {
+    const all = snap.val() || {};
+    for (const [safeKey, state] of Object.entries(all)) {
+      const taskId = TASKS.find(t => t.id.replace(/[.#$[\]]/g, '_') === safeKey)?.id || safeKey;
+      const existing = getAuditState(taskId);
+      const remoteTs = new Date(state.timestamp || 0).getTime();
+      const localTs = new Date(existing.timestamp || 0).getTime();
+      if (remoteTs >= localTs) {
+        localStorage.setItem('audit_' + taskId, JSON.stringify(state));
+      }
+    }
+    renderTaskList(document.getElementById('taskSearch')?.value || '');
+    if (activeTaskIdx >= 0) renderTaskView(TASKS[activeTaskIdx]);
+  }).catch(err => console.warn('Firebase hydration failed:', err));
+}
+
 // Auto-load data.csv
 fetch('data.csv')
   .then(r => { if (r.ok) return r.text(); throw new Error('no data.csv'); })
-  .then(text => loadCSVText(text))
+  .then(text => { loadCSVText(text); return hydrateFromFirebase(); })
   .catch(() => {});
 
 // ─── Sidebar ───
@@ -971,7 +1008,7 @@ function saveAuditState(taskId, state) {
   localStorage.setItem('audit_' + taskId, JSON.stringify(state));
   updateSaveIndicator(true);
   renderTaskList(document.getElementById('taskSearch').value);
-  autoSyncToSheet(taskId);
+  syncToFirebase(taskId, state);
 }
 
 let saveTimer = null;
@@ -981,13 +1018,16 @@ function debouncedSave(taskId, state) {
   saveTimer = setTimeout(() => saveAuditState(taskId, state), 500);
 }
 
-let sheetSyncTimer = null;
-function autoSyncToSheet(taskId) {
-  if (!GSHEET_SCRIPT_URL) return;
-  clearTimeout(sheetSyncTimer);
-  sheetSyncTimer = setTimeout(() => {
-    syncToSheet(taskId).catch(() => {});
-  }, 2000);
+let fbSyncTimer = null;
+function syncToFirebase(taskId, state) {
+  if (!fbDb) return;
+  clearTimeout(fbSyncTimer);
+  fbSyncTimer = setTimeout(() => {
+    const safeKey = taskId.replace(/[.#$[\]]/g, '_');
+    fbDb.ref('audits/' + safeKey).set(state).catch(err => {
+      console.warn('Firebase sync failed:', err);
+    });
+  }, 1500);
 }
 
 function updateSaveIndicator(saved) {
@@ -1087,10 +1127,9 @@ function renderAuditPanel(task) {
 
   panel.innerHTML = `
     <div class="audit-toolbar">
-      <button class="action-btn" id="syncTaskBtn" style="font-size:0.82rem;padding:7px 14px;">Sync to Sheet</button>
-      <button class="action-btn purple" id="syncAllBtn" style="font-size:0.82rem;padding:7px 14px;">Sync All to Sheet</button>
       <button class="action-btn" id="exportCsvBtn" style="font-size:0.82rem;padding:7px 14px;background:#059669;">Export CSV</button>
       <span class="save-indicator" id="auditSaveIndicator">Saved</span>
+      <span id="fbSyncStatus" style="font-size:0.75rem;color:var(--text-muted);margin-left:auto;">${fbDb ? 'Syncing to Firebase' : 'Local only'}</span>
     </div>
 
     <div class="card audit-section" style="display:flex;align-items:center;gap:12px;padding:12px 16px;">
@@ -1259,91 +1298,7 @@ function bindAuditEvents(taskId, allC, idxA, idxB) {
     });
   });
 
-  document.getElementById('syncTaskBtn')?.addEventListener('click', () => syncToSheet(taskId));
-  document.getElementById('syncAllBtn')?.addEventListener('click', syncAllToSheet);
   document.getElementById('exportCsvBtn')?.addEventListener('click', exportAuditCSV);
-}
-
-// ═══════════════════════════════════════════════════════
-// ─── Audit: Google Sheets Sync ───
-// ═══════════════════════════════════════════════════════
-
-async function syncToSheet(taskId) {
-  const url = GSHEET_SCRIPT_URL;
-  if (!url) { alert('Google Sheets sync is not configured.'); return; }
-  const task = TASKS.find(t => t.id === taskId);
-  if (!task) return;
-  const state = getAuditState(taskId);
-  const allC = getUniqueCriteria(task);
-  const rows = buildAuditRows(taskId, task, state, allC);
-
-  try {
-    const res = await fetch(url, {
-      method: 'POST', mode: 'no-cors',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ taskId, rows })
-    });
-    alert('Synced ' + rows.length + ' rows for task ' + taskId);
-  } catch (e) {
-    alert('Sync failed: ' + e.message);
-  }
-}
-
-async function syncAllToSheet() {
-  const url = GSHEET_SCRIPT_URL;
-  if (!url) { alert('Google Sheets sync is not configured.'); return; }
-  let totalRows = 0;
-  const allRows = [];
-  for (const task of TASKS) {
-    const state = getAuditState(task.id);
-    if (!state || Object.keys(state).length === 0) continue;
-    const allC = getUniqueCriteria(task);
-    const rows = buildAuditRows(task.id, task, state, allC);
-    allRows.push(...rows);
-    totalRows += rows.length;
-  }
-  if (totalRows === 0) { alert('No audit data to sync.'); return; }
-
-  try {
-    await fetch(url, {
-      method: 'POST', mode: 'no-cors',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ bulk: true, rows: allRows })
-    });
-    alert('Synced ' + totalRows + ' rows across all tasks.');
-  } catch (e) {
-    alert('Sync failed: ' + e.message);
-  }
-}
-
-function buildAuditRows(taskId, task, state, allC) {
-  const rows = [];
-  for (const c of allC) {
-    const cv = state.criteria?.[c.id] || {};
-    for (const runKey of ['runA', 'runB']) {
-      const runSt = cv[runKey] || {};
-      const runLabel = runKey === 'runA' ? (state.auditRunAKey || '') : (state.auditRunBKey || '');
-      rows.push({
-        task_id: taskId,
-        run_key: runLabel,
-        run_slot: runKey,
-        criterion_id: c.id,
-        criterion_title: c.title,
-        weight: c.weight,
-        grader_verdict: '',
-        reviewer_opinion: runSt.opinion || '',
-        reviewer_notes: runSt.notes || '',
-        env_files_ok: state.envFilesOk ? 'YES' : 'NO',
-        env_not_hindered: state.envNotHindered ? 'YES' : 'NO',
-        env_notes: state.envNotes || '',
-        other_notes: state.otherNotes || '',
-        overall_quality: state.overallQuality || '',
-        reviewer_name: state.reviewer || '',
-        timestamp: state.timestamp || ''
-      });
-    }
-  }
-  return rows;
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1383,6 +1338,7 @@ document.getElementById('importFileInput').addEventListener('change', (e) => {
       let count = 0;
       for (const [taskId, state] of Object.entries(data)) {
         localStorage.setItem('audit_' + taskId, JSON.stringify(state));
+        syncToFirebase(taskId, state);
         count++;
       }
       alert('Imported audit data for ' + count + ' tasks.');
@@ -1398,35 +1354,46 @@ document.getElementById('importFileInput').addEventListener('change', (e) => {
 function exportAuditCSV() {
   const headers = [
     'task_id','run_key','run_slot','criterion_id','criterion_title','weight',
-    'grader_verdict','reviewer_opinion','reviewer_notes',
+    'reviewer_opinion','reviewer_notes',
     'env_files_ok','env_not_hindered','env_notes',
     'other_notes','overall_quality','reviewer_name','timestamp'
   ];
   const csvRows = [headers.join(',')];
 
+  function csvVal(v) {
+    v = String(v ?? '');
+    if (v.includes(',') || v.includes('"') || v.includes('\n')) v = '"' + v.replace(/"/g, '""') + '"';
+    return v;
+  }
+
   for (const task of TASKS) {
     const state = getAuditState(task.id);
     if (!state || Object.keys(state).length === 0) continue;
     const allC = getUniqueCriteria(task);
-    const rows = buildAuditRows(task.id, task, state, allC);
-    for (const r of rows) {
-      csvRows.push(headers.map(h => {
-        let v = String(r[h] ?? '');
-        if (v.includes(',') || v.includes('"') || v.includes('\n')) {
-          v = '"' + v.replace(/"/g, '""') + '"';
-        }
-        return v;
-      }).join(','));
+    for (const c of allC) {
+      const cv = state.criteria?.[c.id] || {};
+      for (const runKey of ['runA', 'runB']) {
+        const runSt = cv[runKey] || {};
+        const row = {
+          task_id: task.id,
+          run_key: runKey === 'runA' ? (state.auditRunAKey || '') : (state.auditRunBKey || ''),
+          run_slot: runKey,
+          criterion_id: c.id, criterion_title: c.title, weight: c.weight,
+          reviewer_opinion: runSt.opinion || '', reviewer_notes: runSt.notes || '',
+          env_files_ok: state.envFilesOk ? 'YES' : 'NO',
+          env_not_hindered: state.envNotHindered ? 'YES' : 'NO',
+          env_notes: state.envNotes || '', other_notes: state.otherNotes || '',
+          overall_quality: state.overallQuality || '',
+          reviewer_name: state.reviewer || '', timestamp: state.timestamp || ''
+        };
+        csvRows.push(headers.map(h => csvVal(row[h])).join(','));
+      }
     }
   }
 
   const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
   downloadBlob(blob, 'audit_results_' + new Date().toISOString().slice(0,10) + '.csv');
 }
-
-// ═══════════════════════════════════════════════════════
-// ─── Audit: Persist reviewer name & sheet URL ───
-// ═══════════════════════════════════════════════════════
 
 </script>
 
