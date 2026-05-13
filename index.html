@@ -418,10 +418,6 @@
       <input type="text" id="taskSearch" placeholder="Search tasks..." />
     </div>
     <div class="task-list" id="taskList"></div>
-    <div class="settings-section" style="padding-top:8px;">
-      <label>Google Apps Script URL</label>
-      <input type="text" class="reviewer-input" id="gsheetUrl" placeholder="https://script.google.com/macros/s/..." style="font-size:0.75rem;" />
-    </div>
     <div class="sidebar-footer">
       <span id="taskCountLabel">0 tasks</span>
       <div style="display:flex;gap:6px;align-items:center;">
@@ -457,6 +453,8 @@
 <script>
 // ─── State ───
 let TASKS = [];          // [{id, data}]  data = parsed JSON per task
+const GSHEET_SCRIPT_URL = ''; // paste your Apps Script web app URL here
+
 let activeTaskIdx = -1;
 let currentRunEntries = [];
 
@@ -973,6 +971,7 @@ function saveAuditState(taskId, state) {
   localStorage.setItem('audit_' + taskId, JSON.stringify(state));
   updateSaveIndicator(true);
   renderTaskList(document.getElementById('taskSearch').value);
+  autoSyncToSheet(taskId);
 }
 
 let saveTimer = null;
@@ -980,6 +979,15 @@ function debouncedSave(taskId, state) {
   updateSaveIndicator(false);
   clearTimeout(saveTimer);
   saveTimer = setTimeout(() => saveAuditState(taskId, state), 500);
+}
+
+let sheetSyncTimer = null;
+function autoSyncToSheet(taskId) {
+  if (!GSHEET_SCRIPT_URL) return;
+  clearTimeout(sheetSyncTimer);
+  sheetSyncTimer = setTimeout(() => {
+    syncToSheet(taskId).catch(() => {});
+  }, 2000);
 }
 
 function updateSaveIndicator(saved) {
@@ -1261,8 +1269,8 @@ function bindAuditEvents(taskId, allC, idxA, idxB) {
 // ═══════════════════════════════════════════════════════
 
 async function syncToSheet(taskId) {
-  const url = document.getElementById('gsheetUrl')?.value?.trim();
-  if (!url) { alert('Set the Google Apps Script URL in the sidebar first.'); return; }
+  const url = GSHEET_SCRIPT_URL;
+  if (!url) { alert('Google Sheets sync is not configured.'); return; }
   const task = TASKS.find(t => t.id === taskId);
   if (!task) return;
   const state = getAuditState(taskId);
@@ -1282,8 +1290,8 @@ async function syncToSheet(taskId) {
 }
 
 async function syncAllToSheet() {
-  const url = document.getElementById('gsheetUrl')?.value?.trim();
-  if (!url) { alert('Set the Google Apps Script URL in the sidebar first.'); return; }
+  const url = GSHEET_SCRIPT_URL;
+  if (!url) { alert('Google Sheets sync is not configured.'); return; }
   let totalRows = 0;
   const allRows = [];
   for (const task of TASKS) {
@@ -1420,10 +1428,6 @@ function exportAuditCSV() {
 // ─── Audit: Persist reviewer name & sheet URL ───
 // ═══════════════════════════════════════════════════════
 
-document.getElementById('gsheetUrl').value = localStorage.getItem('audit_gsheet_url') || '';
-document.getElementById('gsheetUrl').addEventListener('input', (e) => {
-  localStorage.setItem('audit_gsheet_url', e.target.value);
-});
 </script>
 
 </body>

@@ -9,18 +9,14 @@
  *    - Type: Web app
  *    - Execute as: Me
  *    - Who has access: Anyone
- * 5. Copy the deployment URL
- * 6. Paste it into the "Google Apps Script URL" field in the viewer sidebar
- *
- * The script creates/updates a sheet called "Audit Results" with one row
- * per criterion per task.
+ * 5. Copy the deployment URL and give it to the project lead
+ *    to hardcode in the viewer
  */
 
 const SHEET_NAME = "Audit Results";
 const HEADERS = [
-  "task_id", "criterion_id", "criterion_title", "weight",
-  "grader_verdict", "grader_pass_count", "grader_fail_count",
-  "reviewer_opinion", "reviewer_notes",
+  "task_id", "run_key", "run_slot", "criterion_id", "criterion_title", "weight",
+  "grader_verdict", "reviewer_opinion", "reviewer_notes",
   "env_files_ok", "env_not_hindered", "env_notes",
   "other_notes", "overall_quality", "reviewer_name", "timestamp"
 ];
@@ -44,22 +40,18 @@ function doPost(e) {
     }
 
     const data = sheet.getDataRange().getValues();
-    const taskIdCol = 0;
-    const criterionIdCol = 1;
-
     const existingIndex = {};
     for (let i = 1; i < data.length; i++) {
-      const key = data[i][taskIdCol] + "::" + data[i][criterionIdCol];
+      const key = data[i][0] + "::" + data[i][2] + "::" + data[i][3];
       existingIndex[key] = i + 1;
     }
 
     for (const row of rows) {
       const values = HEADERS.map(h => row[h] !== undefined ? row[h] : "");
-      const key = row.task_id + "::" + row.criterion_id;
+      const key = row.task_id + "::" + row.run_slot + "::" + row.criterion_id;
 
       if (existingIndex[key]) {
-        const rowNum = existingIndex[key];
-        sheet.getRange(rowNum, 1, 1, values.length).setValues([values]);
+        sheet.getRange(existingIndex[key], 1, 1, values.length).setValues([values]);
       } else {
         sheet.appendRow(values);
         existingIndex[key] = sheet.getLastRow();
