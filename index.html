@@ -1323,12 +1323,16 @@ function renderAuditRunCards(idxA, idxB) {
     const trajUrl = r.agentOutput?.trajectoryCdsUrl || '';
     const wsUrl = r.agentOutput?.workspaceCdsUrl || '';
     const pct = r.rubric.percentage || 0;
+    const trajId = 'audit_traj_' + (runCardIdCounter++);
     return `<div class="audit-run-card">
       <h4>${label}: ${r.shortId} <span class="model-chip ${r.model}">${r.model}</span>
         <span style="float:right;font-weight:800;color:${scoreColor(pct)}">${pct.toFixed(1)}%</span></h4>
       <div style="margin-bottom:4px;"><div class="score-bar" style="height:8px;"><div class="fill ${scoreClass(pct)}" style="width:${pct}%"></div></div></div>
-      ${trajUrl ? `<div class="meta"><strong>Trajectory:</strong> <code>${esc(trajUrl)}</code></div>` : ''}
       ${wsUrl ? `<div class="meta"><strong>Workspace:</strong> <code>${esc(wsUrl)}</code></div>` : ''}
+      ${trajUrl ? `<div style="margin-top:8px;">
+        <button class="action-btn" onclick="loadTrajectory('${trajId}', '${esc(trajUrl)}')" id="btn_${trajId}" style="font-size:0.78rem;padding:5px 12px;">Load Trajectory</button>
+        <div id="${trajId}"></div>
+      </div>` : ''}
     </div>`;
   }).join('');
 }
