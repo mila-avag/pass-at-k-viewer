@@ -1033,6 +1033,17 @@ function getMajorityVerdict(task, criterionId) {
 
 function pickRandomAuditRuns() {
   if (currentRunEntries.length < 2) return [0, Math.min(1, currentRunEntries.length - 1)];
+  const models = [...new Set(currentRunEntries.map(r => r.model))];
+  if (models.length >= 2) {
+    const m1 = models[Math.floor(Math.random() * models.length)];
+    let m2 = m1;
+    while (m2 === m1) m2 = models[Math.floor(Math.random() * models.length)];
+    const poolA = currentRunEntries.map((r, i) => ({ r, i })).filter(x => x.r.model === m1);
+    const poolB = currentRunEntries.map((r, i) => ({ r, i })).filter(x => x.r.model === m2);
+    const a = poolA[Math.floor(Math.random() * poolA.length)].i;
+    const b = poolB[Math.floor(Math.random() * poolB.length)].i;
+    return [a, b];
+  }
   let a = Math.floor(Math.random() * currentRunEntries.length), b = a;
   while (b === a) b = Math.floor(Math.random() * currentRunEntries.length);
   return [a, b];
@@ -1044,21 +1055,22 @@ function getRunCriterion(runEntry, criterionId) {
 
 function renderAuditPanel(task) {
   const panel = document.getElementById('panel-audit');
-  const state = getAuditState(task.id);
+  let state = getAuditState(task.id);
   const allC = getUniqueCriteria(task);
 
-  const opts = currentRunEntries.map((r, i) =>
-    `<option value="${i}">${r.shortId} — ${(r.rubric.percentage || 0).toFixed(1)}%</option>`
-  ).join('');
-
   let idxA, idxB;
-  if (state.auditRunA != null && state.auditRunB != null
-      && state.auditRunA < currentRunEntries.length
-      && state.auditRunB < currentRunEntries.length) {
-    idxA = state.auditRunA;
-    idxB = state.auditRunB;
+  if (state.auditRunAKey && state.auditRunBKey) {
+    idxA = currentRunEntries.findIndex(r => r.key === state.auditRunAKey);
+    idxB = currentRunEntries.findIndex(r => r.key === state.auditRunBKey);
+    if (idxA < 0) idxA = state.auditRunA || 0;
+    if (idxB < 0) idxB = state.auditRunB || 0;
   } else if (currentRunEntries.length >= 2) {
     [idxA, idxB] = pickRandomAuditRuns();
+    state.auditRunA = idxA;
+    state.auditRunB = idxB;
+    state.auditRunAKey = currentRunEntries[idxA]?.key || '';
+    state.auditRunBKey = currentRunEntries[idxB]?.key || '';
+    saveAuditState(task.id, state);
   } else {
     idxA = 0; idxB = 0;
   }
@@ -1080,18 +1092,7 @@ function renderAuditPanel(task) {
     </div>
 
     <div class="card audit-section">
-      <h4>Audit Runs</h4>
-      <div class="audit-run-picker">
-        <div style="flex:1;min-width:180px;">
-          <label style="font-size:0.83rem;color:var(--text-secondary);display:block;margin-bottom:3px;">Run A</label>
-          <select id="auditRunA" style="width:100%;">${opts}</select>
-        </div>
-        <div style="flex:1;min-width:180px;">
-          <label style="font-size:0.83rem;color:var(--text-secondary);display:block;margin-bottom:3px;">Run B</label>
-          <select id="auditRunB" style="width:100%;">${opts}</select>
-        </div>
-        <button class="action-btn purple" id="auditRndBtn">Random 2</button>
-      </div>
+      <h4>Assigned Runs <span style="font-size:0.78rem;font-weight:400;color:var(--text-muted);">(randomly selected, locked)</span></h4>
       <div class="audit-run-header" id="auditRunHeader"></div>
     </div>
 
@@ -1134,29 +1135,9 @@ function renderAuditPanel(task) {
     </div>
   `;
 
-  const selA = panel.querySelector('#auditRunA');
-  const selB = panel.querySelector('#auditRunB');
-  selA.selectedIndex = idxA;
-  selB.selectedIndex = idxB;
-
-  function refreshAuditRuns() {
-    const a = parseInt(selA.value), b = parseInt(selB.value);
-    renderAuditRunCards(a, b);
-    renderAuditCriteria(task, allC, a, b);
-  }
-
-  selA.addEventListener('change', refreshAuditRuns);
-  selB.addEventListener('change', refreshAuditRuns);
-  panel.querySelector('#auditRndBtn').addEventListener('click', () => {
-    if (currentRunEntries.length < 2) return;
-    const [a, b] = pickRandomAuditRuns();
-    selA.selectedIndex = a;
-    selB.selectedIndex = b;
-    refreshAuditRuns();
-  });
-
-  refreshAuditRuns();
-  bindAuditEvents(task.id, allC);
+  renderAuditRunCards(idxA, idxB);
+  renderAuditCriteria(task, allC, idxA, idxB);
+  bindAuditEvents(task.id, allC, idxA, idxB);
 }
 
 function renderAuditRunCards(idxA, idxB) {
@@ -1226,7 +1207,7 @@ function renderAuditCriteria(task, allC, idxA, idxB) {
   }).join('');
 }
 
-function bindAuditEvents(taskId, allC) {
+function bindAuditEvents(taskId, allC, idxA, idxB) {
   const panel = document.getElementById('panel-audit');
 
   function collectState() {
@@ -1243,10 +1224,10 @@ function bindAuditEvents(taskId, allC) {
       }
     }
     return {
-      auditRunA: parseInt(document.getElementById('auditRunA')?.value) || 0,
-      auditRunB: parseInt(document.getElementById('auditRunB')?.value) || 0,
-      auditRunAKey: currentRunEntries[parseInt(document.getElementById('auditRunA')?.value)]?.key || '',
-      auditRunBKey: currentRunEntries[parseInt(document.getElementById('auditRunB')?.value)]?.key || '',
+      auditRunA: idxA,
+      auditRunB: idxB,
+      auditRunAKey: currentRunEntries[idxA]?.key || '',
+      auditRunBKey: currentRunEntries[idxB]?.key || '',
       envFilesOk: document.getElementById('auditEnvFiles')?.checked || false,
       envNotHindered: document.getElementById('auditEnvNotHindered')?.checked || false,
       envNotes: document.getElementById('auditEnvNotes')?.value || '',
