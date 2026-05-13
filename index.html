@@ -1080,22 +1080,18 @@ function getMajorityVerdict(task, criterionId) {
 
 // ─── Audit: Render ───
 
-function pickRandomAuditRuns() {
+function pickAuditRuns() {
   if (currentRunEntries.length < 2) return [0, Math.min(1, currentRunEntries.length - 1)];
-  const models = [...new Set(currentRunEntries.map(r => r.model))];
-  if (models.length >= 2) {
-    const m1 = models[Math.floor(Math.random() * models.length)];
-    let m2 = m1;
-    while (m2 === m1) m2 = models[Math.floor(Math.random() * models.length)];
-    const poolA = currentRunEntries.map((r, i) => ({ r, i })).filter(x => x.r.model === m1);
-    const poolB = currentRunEntries.map((r, i) => ({ r, i })).filter(x => x.r.model === m2);
-    const a = poolA[Math.floor(Math.random() * poolA.length)].i;
-    const b = poolB[Math.floor(Math.random() * poolB.length)].i;
-    return [a, b];
+  let bestA = 0, bestB = 1, bestDiff = -1;
+  for (let i = 0; i < currentRunEntries.length; i++) {
+    for (let j = i + 1; j < currentRunEntries.length; j++) {
+      const diff = Math.abs((currentRunEntries[i].rubric.percentage || 0) - (currentRunEntries[j].rubric.percentage || 0));
+      const crossModel = currentRunEntries[i].model !== currentRunEntries[j].model;
+      const score = diff + (crossModel ? 0.01 : 0);
+      if (score > bestDiff) { bestDiff = score; bestA = i; bestB = j; }
+    }
   }
-  let a = Math.floor(Math.random() * currentRunEntries.length), b = a;
-  while (b === a) b = Math.floor(Math.random() * currentRunEntries.length);
-  return [a, b];
+  return [bestA, bestB];
 }
 
 function getRunCriterion(runEntry, criterionId) {
@@ -1114,7 +1110,7 @@ function renderAuditPanel(task) {
     if (idxA < 0) idxA = state.auditRunA || 0;
     if (idxB < 0) idxB = state.auditRunB || 0;
   } else if (currentRunEntries.length >= 2) {
-    [idxA, idxB] = pickRandomAuditRuns();
+    [idxA, idxB] = pickAuditRuns();
     state.auditRunA = idxA;
     state.auditRunB = idxB;
     state.auditRunAKey = currentRunEntries[idxA]?.key || '';
@@ -1140,7 +1136,7 @@ function renderAuditPanel(task) {
     </div>
 
     <div class="card audit-section">
-      <h4>Assigned Runs <span style="font-size:0.78rem;font-weight:400;color:var(--text-muted);">(randomly selected, locked)</span></h4>
+      <h4>Assigned Runs <span style="font-size:0.78rem;font-weight:400;color:var(--text-muted);">(max variance pair, locked)</span></h4>
       <div class="audit-run-header" id="auditRunHeader"></div>
     </div>
 
