@@ -320,10 +320,10 @@
       display: flex; align-items: center; gap: 10px;
       padding: 8px 0; font-size: 0.88rem;
     }
-    .audit-check-row input[type="checkbox"] {
-      width: 18px; height: 18px; accent-color: var(--accent);
-      cursor: pointer; flex-shrink: 0;
-    }
+    .audit-check-row select { min-width: 80px; }
+    .audit-env-notes { transition: border-color 0.2s; }
+    .audit-env-notes.required { border-color: var(--fail); }
+    .audit-env-notes.required::placeholder { color: var(--fail); }
     .audit-textarea {
       width: 100%; min-height: 60px; padding: 10px 12px;
       background: var(--bg-input); border: 1px solid var(--border);
@@ -1055,8 +1055,9 @@ function getAuditStatus(taskId) {
     const bOk = cv.runB?.opinion && cv.runB.opinion !== '';
     return aOk && bOk;
   });
-  const envsChecked = state.envFilesOk && state.envNotHindered;
-  return (allReviewed && envsChecked) ? 'complete' : 'in-progress';
+  const envsChecked = state.envFilesOk != null && state.envNotHindered != null;
+  const envNotesOk = (state.envFilesOk !== false && state.envNotHindered !== false) || (state.envNotes && state.envNotes.trim());
+  return (allReviewed && envsChecked && envNotesOk) ? 'complete' : 'in-progress';
 }
 
 function getUniqueCriteria(task) {
@@ -1143,15 +1144,25 @@ function renderAuditPanel(task) {
     <div class="card audit-section">
       <h4>1. Environment Check</h4>
       <div class="audit-check-row">
-        <input type="checkbox" id="auditEnvFiles" ${state.envFilesOk ? 'checked' : ''} />
-        <label for="auditEnvFiles">All input files exist that the prompt needs</label>
+        <select class="audit-select ${state.envFilesOk === true ? 'agree' : state.envFilesOk === false ? 'disagree' : ''}" id="auditEnvFiles">
+          <option value=""${state.envFilesOk == null ? ' selected' : ''}>--</option>
+          <option value="yes"${state.envFilesOk === true ? ' selected' : ''}>Yes</option>
+          <option value="no"${state.envFilesOk === false ? ' selected' : ''}>No</option>
+        </select>
+        <label>All input files exist that the prompt needs</label>
       </div>
       <div class="audit-check-row">
-        <input type="checkbox" id="auditEnvNotHindered" ${state.envNotHindered ? 'checked' : ''} />
-        <label for="auditEnvNotHindered">Agent was not hindered by its environment</label>
+        <select class="audit-select ${state.envNotHindered === true ? 'agree' : state.envNotHindered === false ? 'disagree' : ''}" id="auditEnvNotHindered">
+          <option value=""${state.envNotHindered == null ? ' selected' : ''}>--</option>
+          <option value="yes"${state.envNotHindered === true ? ' selected' : ''}>Yes</option>
+          <option value="no"${state.envNotHindered === false ? ' selected' : ''}>No</option>
+        </select>
+        <label>Agent was not hindered by its environment</label>
       </div>
       <div style="margin-top:8px;">
-        <textarea class="audit-textarea" id="auditEnvNotes" placeholder="Environment notes (optional)...">${esc(state.envNotes || '')}</textarea>
+        <textarea class="audit-textarea audit-env-notes ${(state.envFilesOk === false || state.envNotHindered === false) && !state.envNotes ? 'required' : ''}"
+          id="auditEnvNotes" placeholder="${state.envFilesOk === false || state.envNotHindered === false ? 'Required — describe the issue...' : 'Environment notes (optional)...'}"
+        >${esc(state.envNotes || '')}</textarea>
       </div>
     </div>
 
@@ -1272,8 +1283,8 @@ function bindAuditEvents(taskId, allC, idxA, idxB) {
       auditRunB: idxB,
       auditRunAKey: currentRunEntries[idxA]?.key || '',
       auditRunBKey: currentRunEntries[idxB]?.key || '',
-      envFilesOk: document.getElementById('auditEnvFiles')?.checked || false,
-      envNotHindered: document.getElementById('auditEnvNotHindered')?.checked || false,
+      envFilesOk: envVal('auditEnvFiles'),
+      envNotHindered: envVal('auditEnvNotHindered'),
       envNotes: document.getElementById('auditEnvNotes')?.value || '',
       criteria,
       otherNotes: document.getElementById('auditOtherNotes')?.value || '',
@@ -1283,13 +1294,35 @@ function bindAuditEvents(taskId, allC, idxA, idxB) {
     };
   }
 
-  function onInput() { debouncedSave(taskId, collectState()); }
+  function envVal(id) {
+    const v = document.getElementById(id)?.value;
+    return v === 'yes' ? true : v === 'no' ? false : null;
+  }
+
+  function updateEnvNotesRequired() {
+    const filesNo = document.getElementById('auditEnvFiles')?.value === 'no';
+    const hinderedNo = document.getElementById('auditEnvNotHindered')?.value === 'no';
+    const ta = document.getElementById('auditEnvNotes');
+    if (!ta) return;
+    const needsNotes = filesNo || hinderedNo;
+    ta.classList.toggle('required', needsNotes && !ta.value.trim());
+    ta.placeholder = needsNotes ? 'Required — describe the issue...' : 'Environment notes (optional)...';
+  }
+
+  function onInput() {
+    updateEnvNotesRequired();
+    debouncedSave(taskId, collectState());
+  }
 
   panel.querySelectorAll('input, select, textarea').forEach(el => {
     el.addEventListener('input', onInput);
     el.addEventListener('change', () => {
-      if (el.classList.contains('audit-select') && el.dataset.field === 'opinion') {
-        el.className = 'audit-select ' + (el.value || '');
+      if (el.classList.contains('audit-select')) {
+        if (el.dataset.field === 'opinion') {
+          el.className = 'audit-select ' + (el.value || '');
+        } else if (el.id === 'auditEnvFiles' || el.id === 'auditEnvNotHindered') {
+          el.className = 'audit-select ' + (el.value === 'yes' ? 'agree' : el.value === 'no' ? 'disagree' : '');
+        }
       }
       onInput();
     });
@@ -1377,8 +1410,8 @@ function exportAuditCSV() {
           run_slot: runKey,
           criterion_id: c.id, criterion_title: c.title, weight: c.weight,
           reviewer_opinion: runSt.opinion || '', reviewer_notes: runSt.notes || '',
-          env_files_ok: state.envFilesOk ? 'YES' : 'NO',
-          env_not_hindered: state.envNotHindered ? 'YES' : 'NO',
+          env_files_ok: state.envFilesOk === true ? 'YES' : state.envFilesOk === false ? 'NO' : '',
+          env_not_hindered: state.envNotHindered === true ? 'YES' : state.envNotHindered === false ? 'NO' : '',
           env_notes: state.envNotes || '', other_notes: state.otherNotes || '',
           overall_quality: state.overallQuality || '',
           reviewer_name: state.reviewer || '', timestamp: state.timestamp || ''
