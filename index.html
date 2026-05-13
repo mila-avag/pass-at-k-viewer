@@ -1104,12 +1104,7 @@ function renderAuditPanel(task) {
   const allC = getUniqueCriteria(task);
 
   let idxA, idxB;
-  if (state.auditRunAKey && state.auditRunBKey) {
-    idxA = currentRunEntries.findIndex(r => r.key === state.auditRunAKey);
-    idxB = currentRunEntries.findIndex(r => r.key === state.auditRunBKey);
-    if (idxA < 0) idxA = state.auditRunA || 0;
-    if (idxB < 0) idxB = state.auditRunB || 0;
-  } else if (currentRunEntries.length >= 2) {
+  if (currentRunEntries.length >= 2) {
     [idxA, idxB] = pickAuditRuns();
     state.auditRunA = idxA;
     state.auditRunB = idxB;
