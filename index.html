@@ -1083,16 +1083,15 @@ function getMajorityVerdict(task, criterionId) {
 
 function pickAuditRuns() {
   if (currentRunEntries.length < 2) return [0, Math.min(1, currentRunEntries.length - 1)];
-  let bestA = 0, bestB = 1, bestDiff = -1;
+  let loIdx = 0, hiIdx = 0;
+  let loVal = Infinity, hiVal = -Infinity;
   for (let i = 0; i < currentRunEntries.length; i++) {
-    for (let j = i + 1; j < currentRunEntries.length; j++) {
-      const diff = Math.abs((currentRunEntries[i].rubric.percentage || 0) - (currentRunEntries[j].rubric.percentage || 0));
-      const crossModel = currentRunEntries[i].model !== currentRunEntries[j].model;
-      const score = diff + (crossModel ? 0.01 : 0);
-      if (score > bestDiff) { bestDiff = score; bestA = i; bestB = j; }
-    }
+    const pct = currentRunEntries[i].rubric.percentage || 0;
+    if (pct < loVal) { loVal = pct; loIdx = i; }
+    if (pct > hiVal) { hiVal = pct; hiIdx = i; }
   }
-  return [bestA, bestB];
+  if (loIdx === hiIdx) hiIdx = loIdx === 0 ? 1 : 0;
+  return [loIdx, hiIdx];
 }
 
 function getRunCriterion(runEntry, criterionId) {
@@ -1137,7 +1136,7 @@ function renderAuditPanel(task) {
     </div>
 
     <div class="card audit-section">
-      <h4>Assigned Runs <span style="font-size:0.78rem;font-weight:400;color:var(--text-muted);">(max variance pair, locked)</span></h4>
+      <h4>Assigned Runs <span style="font-size:0.78rem;font-weight:400;color:var(--text-muted);">(lowest + highest scoring, locked)</span></h4>
       <div class="audit-run-header" id="auditRunHeader"></div>
     </div>
 
