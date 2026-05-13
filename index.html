@@ -1018,16 +1018,17 @@ function debouncedSave(taskId, state) {
   saveTimer = setTimeout(() => saveAuditState(taskId, state), 500);
 }
 
-let fbSyncTimer = null;
 function syncToFirebase(taskId, state) {
   if (!fbDb) return;
-  clearTimeout(fbSyncTimer);
-  fbSyncTimer = setTimeout(() => {
-    const safeKey = taskId.replace(/[.#$[\]]/g, '_');
-    fbDb.ref('audits/' + safeKey).set(state).catch(err => {
-      console.warn('Firebase sync failed:', err);
-    });
-  }, 1500);
+  const el = document.getElementById('fbSyncStatus');
+  if (el) { el.textContent = 'Syncing...'; el.style.color = 'var(--warn)'; }
+  const safeKey = taskId.replace(/[.#$[\]]/g, '_');
+  fbDb.ref('audits/' + safeKey).set(state).then(() => {
+    if (el) { el.textContent = 'Synced to Firebase'; el.style.color = 'var(--pass)'; }
+  }).catch(err => {
+    console.warn('Firebase sync failed:', err);
+    if (el) { el.textContent = 'Sync failed'; el.style.color = 'var(--fail)'; }
+  });
 }
 
 function updateSaveIndicator(saved) {
